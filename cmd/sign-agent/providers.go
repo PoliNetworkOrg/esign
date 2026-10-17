@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -94,10 +95,11 @@ func cardDirPrefix(home string) string {
 // /Users/<user>/Group Containers. Any directory below ~/Library works, so the agent uses one of its own: the middleware
 // also writes logs and reads settings in $HOME/.CIEPKI, which stay out of the app's container.
 func softwareCIEHome(home, dataDir string) (string, error) {
-	want := filepath.Join(home, "Library")
+	// macOS paths: path, not filepath, so the logic is tested on every OS.
+	want := path.Join(home, "Library")
 	for _, c := range []string{
-		filepath.Join(dataDir, "cie-mw-home"),
-		filepath.Join(home, "Library", "Containers", "it.ipzs.SoftwareCIE", "Data"),
+		path.Join(dataDir, "cie-mw-home"),
+		path.Join(home, "Library", "Containers", "it.ipzs.SoftwareCIE", "Data"),
 	} {
 		if cardDirPrefix(c) == want {
 			return c, nil

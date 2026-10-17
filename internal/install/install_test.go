@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -87,6 +88,9 @@ func TestBundleVersion(t *testing.T) {
 }
 
 func TestBundleOf(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("macOS paths")
+	}
 	for exe, want := range map[string]string{
 		"/Users/a/Applications/PoliNetwork Sign Agent.app/Contents/MacOS/sign-agent": "/Users/a/Applications/PoliNetwork Sign Agent.app",
 		"/Users/a/Downloads/sign-agent":                                              "",
