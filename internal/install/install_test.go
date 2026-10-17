@@ -89,8 +89,8 @@ func TestBundleVersion(t *testing.T) {
 func TestBundleOf(t *testing.T) {
 	for exe, want := range map[string]string{
 		"/Users/a/Applications/PoliNetwork Sign Agent.app/Contents/MacOS/sign-agent": "/Users/a/Applications/PoliNetwork Sign Agent.app",
-		"/Users/a/Downloads/sign-agent":           "",
-		"/Users/a/X.app/Contents/Resources/agent": "",
+		"/Users/a/Downloads/sign-agent":                                              "",
+		"/Users/a/X.app/Contents/Resources/agent":                                    "",
 	} {
 		got, ok := BundleOf(exe)
 		if got != want || ok != (want != "") {

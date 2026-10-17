@@ -1,0 +1,33 @@
+# Debian package: ./scripts/build-linux.sh builds it when nfpm is installed: it sets ARCH and VERSION and stages the
+# binary in dist/deb/.
+name: polinetwork-sign-agent
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: PoliNetwork APS
+description: |-
+  Signs PDFs with the Italian electronic identity card (CIE) for the PoliNetwork dashboard.
+  The dashboard opens the agent's page on 127.0.0.1:47321; the PIN goes only to the card.
+vendor: PoliNetwork APS
+homepage: https://github.com/PoliNetworkOrg/sign-agent
+license: MIT
+depends:
+  - pcscd
+  - libpcsclite1
+contents:
+  - src: dist/deb/polinetwork-sign-agent
+    dst: /usr/bin/polinetwork-sign-agent
+    file_info:
+      mode: 0755
+  # The same entries `sign-agent install` writes per user (checked by internal/install tests).
+  - src: packaging/linux/polinetwork-sign-agent.desktop
+    dst: /usr/share/applications/polinetwork-sign-agent.desktop
+  - src: packaging/linux/polinetwork-sign-agent.service
+    dst: /usr/lib/systemd/user/polinetwork-sign-agent.service
+  - src: README.md
+    dst: /usr/share/doc/polinetwork-sign-agent/README.md
+scripts:
+  postinstall: packaging/linux/postinstall.sh
+  preremove: packaging/linux/preremove.sh

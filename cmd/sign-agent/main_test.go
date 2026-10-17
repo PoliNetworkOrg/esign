@@ -83,6 +83,46 @@ func TestWorkerCommandWithSoftToken(t *testing.T) {
 	}
 }
 
+// TestWorkerWithPKCS11Module signs with a real PKCS#11 module loaded by the worker: set SIGN_AGENT_TEST_PKCS11 and
+// SIGN_AGENT_TEST_PIN as for the p11 tests (scripts/softhsm-tests.sh does).
+func TestWorkerWithPKCS11Module(t *testing.T) {
+	module, pin := os.Getenv("SIGN_AGENT_TEST_PKCS11"), os.Getenv("SIGN_AGENT_TEST_PIN")
+	if module == "" || pin == "" {
+		t.Skip("SIGN_AGENT_TEST_PKCS11 and SIGN_AGENT_TEST_PIN are not set")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// opencie passes the 8-digit PIN unchanged, like SoftHSM expects it.
+	p := worker.New(worker.Options{
+		Name:    "opencie",
+		Command: []string{exe, "worker", "--provider", "opencie", "--module", module},
+		Env:     append(os.Environ(), mainEnv+"=1"),
+	})
+	defer p.Close()
+	ctx := t.Context()
+	if st := p.Status(ctx); !st.Available || st.CardPresent == nil || !*st.CardPresent {
+		t.Fatalf("status: %+v", st)
+	}
+	if _, err := p.Open(ctx, "99999999"); token.CodeOf(err) != token.CodePinIncorrect {
+		t.Fatalf("wrong PIN: %v", err)
+	}
+	s, err := p.Open(ctx, pin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	digest := sha256.Sum256([]byte("attributes"))
+	sig, err := s.SignDigest(ctx, digest[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rsa.VerifyPKCS1v15(s.Certificate().PublicKey.(*rsa.PublicKey), crypto.SHA256, digest[:], sig); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenURLIgnoresOtherLinks(t *testing.T) {
 	home := t.TempDir()
 	for _, args := range [][]string{

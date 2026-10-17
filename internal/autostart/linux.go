@@ -35,6 +35,30 @@ func paths() (unit, desktop string, err error) {
 	return filepath.Join(cfg, "systemd", "user", UnitName), filepath.Join(cfg, "autostart", "polinetwork-sign-agent.desktop"), nil
 }
 
+// systemUnits are where a package installs the user service, and where `systemctl --global enable` links it.
+var (
+	systemUnits   = []string{"/usr/lib/systemd/user/" + UnitName, "/etc/systemd/user/" + UnitName}
+	globalEnabled = "/etc/systemd/user/default.target.wants/" + UnitName
+)
+
+// unitFile returns the user service's unit: the user's own, or the package's when enabled for every user.
+func unitFile() (string, bool) {
+	if unit, _, err := paths(); err == nil {
+		if _, err := os.Stat(unit); err == nil {
+			return unit, true
+		}
+	}
+	if _, err := os.Stat(globalEnabled); err != nil {
+		return "", false
+	}
+	for _, u := range systemUnits {
+		if _, err := os.Stat(u); err == nil {
+			return u, true
+		}
+	}
+	return "", false
+}
+
 func autostartEntry(exe string) string {
 	return fmt.Sprintf(`[Desktop Entry]
 Type=Application
@@ -95,10 +119,8 @@ func Install(exe string) error {
 
 // Stop stops the service. An agent started from the XDG entry is not tracked; the installer stops it by path.
 func Stop() {
-	if unit, _, err := paths(); err == nil {
-		if _, err := os.Stat(unit); err == nil && hasSystemd() {
-			_ = systemctl("stop", UnitName)
-		}
+	if _, ok := unitFile(); ok && hasSystemd() {
+		_ = systemctl("stop", UnitName)
 	}
 }
 
@@ -108,8 +130,7 @@ func Start() error {
 	if !ok {
 		return ErrNotInstalled
 	}
-	unit, _, _ := paths()
-	if _, err := os.Stat(unit); err == nil && hasSystemd() {
+	if _, ok := unitFile(); ok && hasSystemd() {
 		return systemctl("start", UnitName)
 	}
 	return launch.SpawnDetached(exe, "serve")
@@ -122,14 +143,19 @@ var (
 
 // Installed returns the executable registered to start at login.
 func Installed() (string, bool) {
-	unit, desktop, err := paths()
+	_, desktop, err := paths()
 	if err != nil {
 		return "", false
 	}
-	if data, err := os.ReadFile(unit); err == nil {
+	if unit, ok := unitFile(); ok {
+		data, err := os.ReadFile(unit)
+		if err != nil {
+			return "", false
+		}
 		if m := execStartPattern.FindSubmatch(data); m != nil {
 			return strings.NewReplacer(`\\`, `\`, `\"`, `"`, "%%", "%").Replace(string(m[1])), true
 		}
+		return "", false
 	}
 	if data, err := os.ReadFile(desktop); err == nil {
 		if m := desktopPattern.FindSubmatch(data); m != nil {
@@ -141,10 +167,14 @@ func Installed() (string, bool) {
 
 // Describe names the registration, for diagnostics.
 func Describe() string {
-	unit, desktop, _ := paths()
-	if _, err := os.Stat(unit); err == nil {
+	if unit, ok := unitFile(); ok {
 		return "systemd user service " + unit
 	}
+	if hasSystemd() {
+		unit, _, _ := paths()
+		return "systemd user service " + unit
+	}
+	_, desktop, _ := paths()
 	return "XDG autostart entry " + desktop
 }
 
