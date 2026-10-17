@@ -102,6 +102,11 @@ func (c *pcscConn) Transmit(cmd []byte) ([]byte, error) {
 	if err != nil {
 		return nil, removed(err)
 	}
+	if len(resp) < 2 {
+		// A card always answers with a status word. Some reader drivers (vpcd among them) report a card that has
+		// just left as a successful transfer of nothing, before PC/SC notices the removal.
+		return nil, fmt.Errorf("%w: no status word from the reader", ias.ErrCardRemoved)
+	}
 	return resp, nil
 }
 

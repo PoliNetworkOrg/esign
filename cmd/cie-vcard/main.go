@@ -69,17 +69,22 @@ type vcard struct {
 	addr  string
 	trace bool
 
-	mu      sync.Mutex
-	present bool
-	conn    net.Conn
+	mu        sync.Mutex
+	present   bool
+	removedAt time.Time
+	conn      net.Conn
 }
+
+// minAbsence keeps a removed card away long enough for pcscd's presence polling to see the removal; a quicker
+// reconnection looks to pcscd like a card that never left but stopped answering.
+const minAbsence = 2 * time.Second
 
 // run keeps the card connected to vpcd while it is "inserted": vpcd reports a card on its reader exactly while a
 // client is connected.
 func (v *vcard) run() {
 	for {
 		v.mu.Lock()
-		present := v.present
+		present := v.present && time.Since(v.removedAt) >= minAbsence
 		v.mu.Unlock()
 		if !present {
 			time.Sleep(100 * time.Millisecond)
@@ -140,6 +145,9 @@ func (v *vcard) setPresent(present bool) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.present = present
+	if !present {
+		v.removedAt = time.Now()
+	}
 	if !present && v.conn != nil {
 		_ = v.conn.Close()
 		v.conn = nil

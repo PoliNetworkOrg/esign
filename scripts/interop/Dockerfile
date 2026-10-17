@@ -28,9 +28,11 @@ RUN mkdir /vs && curl -fsSL https://github.com/frankmorgner/vsmartcard/archive/$
     && make -C src/vpcd && make -C src/ifd-vpcd && make -C src/ifd-vpcd install DESTDIR=/out \
     && mkdir /vpcd && cp -L /out/usr/lib/pcsc/drivers/serial/libifdvpcd.so /vpcd/ && cp /out/etc/reader.conf.d/vpcd /vpcd/reader.conf
 
-FROM --platform=linux/amd64 golang:1.26-bookworm
+# trixie: OpenCIE's released module needs glibc 2.38 and a few shared libraries.
+FROM --platform=linux/amd64 golang:1.26-trixie
 ARG OPENCIE_VERSION=1.3.3
-RUN apt-get update && apt-get install -y --no-install-recommends curl libpcsclite-dev openssl pcscd pcsc-tools \
+RUN apt-get update && apt-get install -y --no-install-recommends curl libfontconfig1 libfreetype6 libopenjp2-7 \
+    libpcsclite-dev libpng16-16t64 openssl pcscd pcsc-tools \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=vpcd /vpcd/libifdvpcd.so /usr/lib/pcsc/drivers/serial/libifdvpcd.so
 COPY --from=vpcd /vpcd/reader.conf /etc/reader.conf.d/vpcd

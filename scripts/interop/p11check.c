@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "pkcs11go.h"
 
@@ -73,6 +74,7 @@ static CK_SLOT_ID first_slot(void) {
 }
 
 int main(int argc, char **argv) {
+	setvbuf(stdout, NULL, _IONBF, 0);
 	if (argc < 3) {
 		fprintf(stderr, "usage: p11check <module> probe|pair|sign ...\n");
 		return 1;
@@ -158,7 +160,7 @@ int main(int argc, char **argv) {
 		CK_RV rv = p11->C_Login(s, CKU_USER, (CK_UTF8CHAR_PTR)argv[3], strlen(argv[3]));
 		printf("C_Login(%zu digits): rv=0x%lx\n", strlen(argv[3]), (unsigned long)rv);
 		if (rv != CKR_OK)
-			return 3;
+			_exit(3); /* the official module leaves a notification thread behind: skip its destructors */
 		CK_OBJECT_HANDLE key = find(s, CKO_PRIVATE_KEY);
 		CK_MECHANISM mech = {CKM_RSA_PKCS, NULL, 0};
 		check("C_SignInit", p11->C_SignInit(s, &mech, key));
