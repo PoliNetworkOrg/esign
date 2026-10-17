@@ -27,6 +27,10 @@ let pending = []
 /** What happened to each ticket: { status, error }. */
 const outcome = new Map()
 let signer = ""
+/** The PIN this browser asked the agent to remember, { signer, expires }, or null. The page never sees the PIN. */
+let remembered = null
+/** How long the agent remembers a PIN on request, 0 when it does not offer to. */
+let rememberMinutes = 0
 
 function readTickets() {
   try {
@@ -150,7 +154,7 @@ async function load() {
   if (tickets.length > MAX_TICKETS) return fatal(`Sign at most ${MAX_TICKETS} documents at a time.`)
   if (tickets.length > 1) $("loading-text").textContent = "Loading the documents…"
   try {
-    ;({ jobs: docs } = await api("/api/job", { tickets, origin }))
+    ;({ jobs: docs, remembered, rememberMinutes = 0 } = await api("/api/job", { tickets, origin }))
   } catch (error) {
     return fatal(error.message || "Cannot load the document.")
   }
@@ -187,10 +191,41 @@ function showForm(listed, toSign, message = "") {
   }
   $("submit").textContent = n === 1 ? "Sign" : `Sign ${n} documents`
   $("pin").value = ""
+  $("remember").checked = false
   formError(message)
   show("form")
-  $("pin").focus()
+  showPIN()
   startPolling()
+}
+
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" })
+
+/** Shows the PIN field, or that the agent remembers the PIN, and moves the focus to what comes next. */
+function showPIN() {
+  const known = Boolean(remembered)
+  $("remembered").hidden = !known
+  $("pin-fields").hidden = known
+  // A disabled field is left out of the form's validation.
+  $("pin").disabled = known
+  if (known) {
+    const until = timeFormat.format(new Date(remembered.expires))
+    $("remembered-text").textContent =
+      `Your PIN is remembered${remembered.signer ? ` for ${remembered.signer}` : ""} until ${until}, while the CIE stays on the reader.`
+    $("submit").focus()
+  } else {
+    $("remember-row").hidden = !rememberMinutes
+    $("remember-text").textContent = `Remember the PIN on this computer for ${rememberMinutes} minutes`
+    $("pin").focus()
+  }
+}
+
+/** Updates what the agent remembers from a status, and asks for the PIN when the agent forgot it meanwhile. */
+function setRemembered(next) {
+  const was = Boolean(remembered)
+  remembered = next || null
+  if (was === Boolean(remembered) || $("form").hidden) return
+  showPIN()
+  if (was) formError("The remembered PIN was forgotten: the CIE left the reader or the time ran out.")
 }
 
 function startPolling() {
@@ -212,6 +247,7 @@ async function pollStatus() {
     return
   }
   if (status.busy) return
+  setRemembered(status.remembered)
   const card = $("card")
   const usable = status.providers.filter((p) => p.available)
   const readers = [...new Set(usable.flatMap((p) => p.readers || []))]
@@ -280,11 +316,17 @@ function showResults() {
 
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault()
-  const pin = $("pin").value.trim()
-  if (!/^\d{8}$/.test(pin)) {
-    formError("Type the 8 digits of your CIE PIN.")
-    $("pin").focus()
-    return
+  // Without a PIN the agent uses the one it remembers for this browser.
+  const body = { tickets: pending, origin }
+  if (!remembered) {
+    const pin = $("pin").value.trim()
+    if (!/^\d{8}$/.test(pin)) {
+      formError("Type the 8 digits of your CIE PIN.")
+      $("pin").focus()
+      return
+    }
+    body.pin = pin
+    body.remember = $("remember").checked
   }
   // Cleared before the form goes away, so a browser watching the submission has nothing to offer to save.
   $("pin").value = ""
@@ -294,11 +336,14 @@ $("form").addEventListener("submit", async (event) => {
   show("working")
   let result
   try {
-    result = await api("/api/sign", { tickets: pending, origin, pin })
+    result = await api("/api/sign", body)
   } catch (error) {
     signing = false
     if (JOB_ENDED.has(error.code)) return fatal(error.message)
+    // After a failure the agent no longer remembers the PIN, unless the card was busy and was never tried.
+    if (error.code !== "busy") remembered = null
     show("form")
+    showPIN()
     $("pin").value = ""
     let message = error.message || "The signature failed."
     if (error.code === "pin_incorrect") {
@@ -308,8 +353,8 @@ $("form").addEventListener("submit", async (event) => {
           : "Wrong PIN. After 3 wrong attempts the PIN is blocked and needs the PUK."
     }
     formError(message)
-    $("pin").focus()
-    notify("error", error.code)
+    // Asking for the PIN is not a failure of the signature.
+    if (error.code !== "pin_required") notify("error", error.code)
     return
   }
   signing = false
@@ -320,6 +365,17 @@ $("form").addEventListener("submit", async (event) => {
 
 $("pin").addEventListener("input", () => {
   $("pin").value = $("pin").value.replace(/\D/g, "").slice(0, 8)
+})
+
+$("forget").addEventListener("click", async () => {
+  try {
+    await api("/api/forget", {})
+  } catch {
+    // The page asks for the PIN anyway, and typing it replaces the remembered one.
+  }
+  remembered = null
+  formError("")
+  showPIN()
 })
 
 $("cancel").addEventListener("click", async () => {

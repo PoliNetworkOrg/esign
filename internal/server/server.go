@@ -5,6 +5,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rsa"
@@ -46,6 +47,11 @@ type Options struct {
 	Logger    *slog.Logger
 	// Backend builds the client for a dashboard origin; backend.New by default (tests replace it).
 	Backend func(origin string) Backend
+	// RememberFor is how long a PIN lasts when the user asks to remember it: DefaultRememberFor when zero, never
+	// when negative.
+	RememberFor time.Duration
+	// CardWatch is how often the card is checked while a PIN is remembered; 2 seconds when zero.
+	CardWatch time.Duration
 }
 
 // Backend is the part of the dashboard's API the agent uses.
@@ -62,6 +68,10 @@ type Server struct {
 	// card serializes signatures: one card, one operation at a time.
 	card   sync.Mutex
 	static http.Handler
+
+	// memMu guards mem, the PIN the user chose to remember (see remember.go). Lock it after card, never before.
+	memMu sync.Mutex
+	mem   *remembered
 }
 
 // New returns a server.
@@ -72,6 +82,12 @@ func New(opts Options) *Server {
 	if opts.Backend == nil {
 		version := opts.Version
 		opts.Backend = func(origin string) Backend { return backend.New(origin, version) }
+	}
+	if opts.RememberFor == 0 {
+		opts.RememberFor = DefaultRememberFor
+	}
+	if opts.CardWatch <= 0 {
+		opts.CardWatch = defaultCardWatch
 	}
 	sub, _ := fs.Sub(webFS, "web")
 	return &Server{opts: opts, static: http.FileServerFS(sub)}
@@ -87,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/job", s.api(s.job))
 	mux.HandleFunc("POST /api/sign", s.api(s.sign))
 	mux.HandleFunc("POST /api/cancel", s.api(s.cancel))
+	mux.HandleFunc("POST /api/forget", s.api(s.forgetPIN))
 	return s.guard(mux)
 }
 
@@ -203,6 +220,8 @@ type statusResponse struct {
 	Providers []token.Status `json:"providers"`
 	// Ready is true when some provider sees a card.
 	Ready bool `json:"ready"`
+	// Remembered is set while this browser has a remembered PIN.
+	Remembered *rememberedInfo `json:"remembered,omitempty"`
 }
 
 func (s *Server) statuses(ctx context.Context) statusResponse {
@@ -226,7 +245,9 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	defer s.card.Unlock()
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	writeJSON(w, http.StatusOK, s.statuses(ctx))
+	res := s.statuses(ctx)
+	res.Remembered = s.rememberedFor(r)
+	writeJSON(w, http.StatusOK, res)
 }
 
 // MaxTickets is how many documents the page can sign with one PIN.
@@ -235,7 +256,10 @@ const MaxTickets = 10
 type jobRequest struct {
 	Tickets []string `json:"tickets"`
 	Origin  string   `json:"origin"`
-	PIN     string   `json:"pin,omitempty"`
+	// PIN is empty to sign with the PIN this browser remembered.
+	PIN string `json:"pin,omitempty"`
+	// Remember asks to remember PIN for Options.RememberFor once the card accepts it.
+	Remember bool `json:"remember,omitempty"`
 }
 
 // apiError is the error of one ticket in a response.
@@ -317,7 +341,11 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	writeJSON(w, http.StatusOK, map[string]any{"jobs": fetchJobs(ctx, be, req.Tickets)})
+	res := map[string]any{"jobs": fetchJobs(ctx, be, req.Tickets), "remembered": s.rememberedFor(r)}
+	if s.opts.RememberFor > 0 {
+		res["rememberMinutes"] = int(s.opts.RememberFor / time.Minute)
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
@@ -389,14 +417,21 @@ func signTimeout(signatures int) time.Duration {
 	return min(time.Minute+time.Duration(signatures)*30*time.Second, 15*time.Minute)
 }
 
-// sign opens one card session with the PIN and signs every job in order. A backend error ends only its job; a card
-// error ends the session, and the jobs after it are skipped.
+// sign opens one card session with the PIN, typed or remembered, and signs every job in order. A backend error ends
+// only its job; a card error ends the session, and the jobs after it are skipped.
 func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 	req, be, ok := s.decode(w, r)
 	if !ok {
 		return
 	}
-	if !token.ValidPIN(req.PIN, 8) {
+	var mem *remembered
+	if req.PIN == "" {
+		if mem, req.PIN = s.recall(r); mem == nil {
+			clearRememberCookie(w)
+			writeError(w, http.StatusUnauthorized, codePINRequired, "Type your CIE PIN.")
+			return
+		}
+	} else if !token.ValidPIN(req.PIN, 8) {
 		writeTokenError(w, token.Errorf(token.CodePinInvalid, "malformed PIN"))
 		return
 	}
@@ -431,8 +466,14 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), signTimeout(signatures))
 	defer cancel()
 	session, provider, err := s.open(ctx, req.PIN)
+	pin := req.PIN
 	req.PIN = ""
 	if err != nil {
+		if mem != nil {
+			// Whatever went wrong, the card it was typed for may not be there: ask for the PIN again.
+			s.forget(mem, "card error: "+string(token.CodeOf(err)))
+			clearRememberCookie(w)
+		}
 		code := token.CodeOf(err)
 		for _, i := range todo {
 			s.fail(ctx, be, jobs[i].Ticket, string(code), messageOf[code])
@@ -441,11 +482,26 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer session.Close()
+	info := certinfo.Parse(session.Certificate())
+	switch {
+	case mem != nil && !bytes.Equal(session.Certificate().Raw, mem.cert):
+		// Another card, which happens to have the same PIN: sign only after the user typed it for this card.
+		s.forget(mem, "another card")
+		clearRememberCookie(w)
+		writeError(w, http.StatusUnauthorized, codePINRequired, "A different CIE is on the reader. Type its PIN.")
+		return
+	case mem == nil && req.Remember && s.opts.RememberFor > 0:
+		s.remember(w, pin, session.Certificate().Raw, info.DisplayName)
+	case mem == nil:
+		// Typing the PIN without asking to remember it replaces a PIN remembered before.
+		s.forgetAll("PIN typed again")
+		clearRememberCookie(w)
+	}
+	pin = ""
 	var chain [][]byte
 	for _, c := range session.Chain() {
 		chain = append(chain, c.Raw)
 	}
-	info := certinfo.Parse(session.Certificate())
 
 	// stop is the card error that ended the session: the remaining jobs get it too.
 	var stop *apiError
@@ -473,6 +529,9 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results, "signer": info})
 }
+
+// codePINRequired answers a signature without a PIN when none is remembered, or no longer usable.
+const codePINRequired = "pin_required"
 
 // cardError is a failure of the card session, which is not used again after it.
 type cardError struct{ error }

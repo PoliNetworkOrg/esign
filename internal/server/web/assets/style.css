@@ -258,6 +258,49 @@ button:focus-visible {
   font-size: 13px;
 }
 
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.check-row input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.remembered {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.remembered p {
+  margin: 0 0 4px;
+}
+
+button.link {
+  height: auto;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+button.link:hover {
+  background: none;
+  color: var(--accent-hover);
+}
+
 .error {
   margin: 14px 0 0;
   padding: 10px 12px;
