@@ -152,16 +152,16 @@ func generate() (ca *x509.Certificate, key *rsa.PrivateKey, cert *x509.Certifica
 	if err != nil {
 		return
 	}
-	// Shaped like a CIE authentication certificate: CN "SURNAME NAME", serialNumber "TINIT-<fiscal code>".
+	// Shaped like a CIE authentication certificate: CN "<fiscal code>/<NIS>", serialNumber the document number.
 	leafTemplate := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			CommonName: "SVILUPPO PROVA",
+			CommonName: "SVLPRV80A01F205X/041001234567",
 			Country:    []string{"IT"},
 			ExtraNames: []pkix.AttributeTypeAndValue{
 				{Type: asn1.ObjectIdentifier{2, 5, 4, 4}, Value: "SVILUPPO"},
 				{Type: asn1.ObjectIdentifier{2, 5, 4, 42}, Value: "PROVA"},
-				{Type: oidSerialNumber, Value: "TINIT-SVLPRV80A01F205X"},
+				{Type: oidSerialNumber, Value: "IDCIT-CA00000AA"},
 			},
 		},
 		NotBefore: now.Add(-time.Hour),

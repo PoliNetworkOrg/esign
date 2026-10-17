@@ -88,11 +88,11 @@ func makePKI(id Identity, k *Keys, now time.Time, pss bool) (*pki, error) {
 		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
 			Country:    []string{"IT"},
-			CommonName: id.Surname + " " + id.GivenName,
+			CommonName: id.FiscalCode + "/" + id.NIS,
 			ExtraNames: []pkix.AttributeTypeAndValue{
 				{Type: oidSurname, Value: id.Surname},
 				{Type: oidGivenName, Value: id.GivenName},
-				{Type: oidSerial, Value: "TINIT-" + id.FiscalCode},
+				{Type: oidSerial, Value: "IDCIT-" + id.Serial},
 			},
 		},
 		NotBefore:   now.Add(-24 * time.Hour),
