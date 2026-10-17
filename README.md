@@ -23,8 +23,12 @@ finalized by the PoliNetwork backend (PAdES), the agent only signs a digest with
     (`libopencie-pkcs11.so`, `.dylib` or `.dll`) next to the agent or in the agent's configuration folder. It also
     keeps a pairing cache, which the agent creates the same way.
   - `cie`, built into the agent: it talks to the card directly over PC/SC with the CIE's IAS protocol (secure
-    channel, chip authentication, PIN, signature), with no other software and no pairing. It is new and has not been
-    tested on physical cards yet.
+    channel, chip authentication, PIN, signature), with no other software and no pairing. Before sending the PIN it
+    checks that the card is a genuine CIE: the card's document security object must be signed by a Document Signer
+    of the Italian Country Signing CA, whose certificates (CSCA00–05 from
+    [csca-ita.interno.gov.it](https://csca-ita.interno.gov.it/), SHA-256 fingerprints in
+    `internal/token/cie/ias/csca/SHA256SUMS`) are built into the agent, and it must cover the chip's authentication
+    key and DH parameters. It is new and has not been tested on physical cards yet.
 
   The PIN reaches at most one of them: once a provider has sent it to the card, a failure is reported, never retried
   elsewhere.
@@ -185,8 +189,9 @@ pcsc-lite, then checks, each on a fresh card:
 1. the official module alone, from a small C program (`scripts/interop/p11check.c`): unpaired `C_OpenSession`
    failure, `AbilitaCIE` pairing with a wrong and then the right PIN, `C_Login` with the last four digits and
    `C_Sign(CKM_RSA_PKCS)` over a SHA-256 DigestInfo, verified with OpenSSL;
-2. the agent's `cie` provider through pcsc-lite: status, wrong PIN with the remaining attempts, signature, card
-   pulled out mid-session;
+2. the agent's `cie` provider through pcsc-lite: refusal of the card with the production CSCAs (its SOD is signed
+   under the simulator's test CSCA, which `cie-vcard -csca-out` writes for the test to trust), status, wrong PIN with
+   the remaining attempts, signature, card pulled out mid-session;
 3. the agent's `cie-mw` provider on the official module, in process and in a worker: automatic pairing (wrong PIN
    first), signatures, wrong PIN once paired;
 4. the same for `opencie` on OpenCIE;
@@ -195,8 +200,9 @@ pcsc-lite, then checks, each on a fresh card:
 The official sources are built unmodified, without optimization like the project's Eclipse "Debug" build (an
 optimizing compiler turns their undefined behaviour into crashes). The simulator verifies the terminal CV
 certificate that the reference builds against an RSA modulus generated for the reference's fixed root private
-exponent, since the real root modulus exists only on cards; and its document security object is signed by a test document signer, which the
-official code accepts because it checks the SOD signature but not the signer's chain.
+exponent, since the real root modulus exists only on cards; and its document security object is signed by a test Document Signer under a test CSCA:
+the official code accepts it because it checks the SOD signature but not the signer's chain, while the agent's `cie`
+provider accepts it only when a test hands it that CSCA.
 
 Builds:
 

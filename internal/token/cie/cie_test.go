@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"strings"
 	"sync"
 	"testing"
@@ -128,6 +129,12 @@ func (o *otherCard) Transmit([]byte) ([]byte, error) {
 }
 func (o *otherCard) Reset() {}
 
+// trusting makes p accept the simulator's test CSCA instead of the Italian ones.
+func trusting(p *cie.Provider, sim *cardsim.Card) *cie.Provider {
+	p.TrustAnchors = []*x509.Certificate{sim.CSCACertificate()}
+	return p
+}
+
 func digest() []byte {
 	d := sha256.Sum256([]byte("CMS signed attributes"))
 	return d[:]
@@ -167,7 +174,7 @@ func TestStatus(t *testing.T) {
 func TestOpenSign(t *testing.T) {
 	for _, v := range []cardsim.Variant{cardsim.NXP, cardsim.Gemalto, cardsim.Unlisted} {
 		sim := simCard(t, cardsim.Options{Variant: v})
-		p := cie.NewWithConnector(&connector{readers: []*reader{{name: "R", card: sim}}})
+		p := trusting(cie.NewWithConnector(&connector{readers: []*reader{{name: "R", card: sim}}}), sim)
 		s, err := p.Open(t.Context(), "12345678")
 		if err != nil {
 			t.Fatalf("variant %d: open: %v", v, err)
@@ -190,7 +197,7 @@ func TestOpenSign(t *testing.T) {
 
 func TestPINErrors(t *testing.T) {
 	sim := simCard(t, cardsim.Options{})
-	p := cie.NewWithConnector(&connector{readers: []*reader{{name: "R", card: sim}}})
+	p := trusting(cie.NewWithConnector(&connector{readers: []*reader{{name: "R", card: sim}}}), sim)
 	before, _ := sim.Stats()
 	if _, err := p.Open(t.Context(), "1234"); token.CodeOf(err) != token.CodePinInvalid {
 		t.Fatalf("short PIN: %v", err)
@@ -220,7 +227,7 @@ func TestCardRemovedMidSession(t *testing.T) {
 	sim := simCard(t, cardsim.Options{})
 	r := &reader{name: "R", card: sim}
 	c := &connector{readers: []*reader{r}}
-	p := cie.NewWithConnector(c)
+	p := trusting(cie.NewWithConnector(c), sim)
 	s, err := p.Open(t.Context(), "12345678")
 	if err != nil {
 		t.Fatal(err)
@@ -244,5 +251,16 @@ func TestNotACIE(t *testing.T) {
 	}
 	if _, err := cie.NewWithConnector(&connector{}).Open(t.Context(), "12345678"); token.CodeOf(err) != token.CodeNoReader {
 		t.Fatalf("no reader: %v", err)
+	}
+}
+
+// TestUntrustedCard: with the production anchors the simulator's SOD does not verify, so the provider refuses the
+// card with card_untrusted before sending the PIN.
+func TestUntrustedCard(t *testing.T) {
+	sim := simCard(t, cardsim.Options{})
+	p := cie.NewWithConnector(&connector{readers: []*reader{{name: "R", card: sim}}})
+	_, err := p.Open(t.Context(), "12345678")
+	if token.CodeOf(err) != token.CodeCardUntrusted || token.PINSent(err) || sim.PINTriesLeft() != 3 {
+		t.Fatalf("got %v (PIN sent %v, tries %d)", err, token.PINSent(err), sim.PINTriesLeft())
 	}
 }

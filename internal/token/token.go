@@ -48,9 +48,12 @@ type Status struct {
 type Code string
 
 const (
-	CodeNoReader          Code = "no_reader"
-	CodeNoCard            Code = "no_card"
-	CodeCardUnsupported   Code = "card_unsupported"
+	CodeNoReader        Code = "no_reader"
+	CodeNoCard          Code = "no_card"
+	CodeCardUnsupported Code = "card_unsupported"
+	// CodeCardUntrusted is a card that failed the authenticity checks (document security object, chip
+	// authentication) before the PIN was sent. It may be counterfeit or relayed, so no other provider is tried.
+	CodeCardUntrusted     Code = "card_untrusted"
 	CodeMiddlewareMissing Code = "middleware_missing"
 	CodeNotPaired         Code = "not_paired"
 	CodeNotFound          Code = "certificate_not_found"

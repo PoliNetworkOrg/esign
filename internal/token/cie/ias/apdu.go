@@ -55,6 +55,10 @@ type command struct {
 
 func le(n byte) *byte { return &n }
 
+// rereadable reports whether a command may be sent again with the length a 6Cxx answer names: only reads without side
+// effects (READ BINARY, GET DATA). Anything else, VERIFY above all, is never repeated.
+func rereadable(ins byte) bool { return ins == 0xB0 || ins == 0xCB }
+
 // maxPlainChunk is the largest unprotected data field the reference sends in one command; longer data is chained.
 const maxPlainChunk = 255
 
@@ -101,8 +105,8 @@ func (c *Card) getResponse(op string, data []byte, sw uint16) ([]byte, uint16, e
 }
 
 // sendPlain sends a command without secure messaging, chaining data longer than 255 bytes like the reference
-// (CLA bit 0x10 on all but the last command) and collecting 61xx continuations. A 6Cxx answer is retried once with
-// the length the card asked for.
+// (CLA bit 0x10 on all but the last command) and collecting 61xx continuations. A 6Cxx answer to a read is retried
+// once with the length the card asked for; to anything else it is an error.
 func (c *Card) sendPlain(op string, cmd command) ([]byte, uint16, error) {
 	data := cmd.data
 	for len(data) > maxPlainChunk {
@@ -121,6 +125,9 @@ func (c *Card) sendPlain(op string, cmd command) ([]byte, uint16, error) {
 		return nil, 0, err
 	}
 	if sw>>8 == 0x6C {
+		if !rereadable(cmd.ins) {
+			return nil, 0, protoErr(op, "unexpected %04X", sw)
+		}
 		resp, sw, err = c.transmit(op, encodeShort(cmd.cla, cmd.ins, cmd.p1, cmd.p2, data, le(byte(sw))))
 		if err != nil {
 			return nil, 0, err

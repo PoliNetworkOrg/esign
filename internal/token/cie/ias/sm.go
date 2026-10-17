@@ -153,6 +153,10 @@ func (c *Card) sendSM(op string, cmd command) ([]byte, uint16, error) {
 	last := command{cla: cmd.cla, ins: cmd.ins, p1: cmd.p1, p2: cmd.p2, data: data, le: cmd.le}
 	resp, sw, err := c.exchangeSM(op, last)
 	if err == nil && sw>>8 == 0x6C {
+		if !rereadable(cmd.ins) {
+			c.sm = nil
+			return nil, 0, protoErr(op, "unexpected %04X; the session is aborted", sw)
+		}
 		last.le = le(byte(sw))
 		resp, sw, err = c.exchangeSM(op, last)
 	}

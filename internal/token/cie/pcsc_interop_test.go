@@ -3,6 +3,8 @@ package cie_test
 import (
 	"crypto"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"net/http"
 	"os"
 	"strings"
@@ -23,6 +25,25 @@ func TestPCSCInterop(t *testing.T) {
 		t.Skip("SIGN_AGENT_TEST_PCSC, SIGN_AGENT_TEST_PIN and SIGN_AGENT_TEST_VCARD are not set")
 	}
 	p := cie.New()
+	// The virtual card's SOD is signed under the simulator's test CSCA, which cie-vcard writes out.
+	anchor, err := os.ReadFile(os.Getenv("SIGN_AGENT_TEST_CSCA"))
+	if err != nil {
+		t.Fatalf("SIGN_AGENT_TEST_CSCA: %v", err)
+	}
+	block, _ := pem.Decode(anchor)
+	if block == nil {
+		t.Fatal("SIGN_AGENT_TEST_CSCA is not PEM")
+	}
+	csca, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Open(t.Context(), pin); token.CodeOf(err) != token.CodeCardUntrusted || token.PINSent(err) {
+		t.Fatalf("with the Italian anchors: %v", err)
+	} else {
+		t.Logf("with the production Italian CSCAs the simulated card is refused before the PIN: %v", err)
+	}
+	p.TrustAnchors = []*x509.Certificate{csca}
 
 	st := p.Status(t.Context())
 	t.Logf("status: %+v", st)
@@ -34,7 +55,7 @@ func TestPCSCInterop(t *testing.T) {
 	if wrong == pin {
 		wrong = strings.Repeat("1", 8)
 	}
-	_, err := p.Open(t.Context(), wrong)
+	_, err = p.Open(t.Context(), wrong)
 	var te *token.Error
 	if !asTokenError(err, &te) || te.Code != token.CodePinIncorrect || te.RetriesLeft != 2 || !te.PINSent {
 		t.Fatalf("wrong PIN: %v", err)

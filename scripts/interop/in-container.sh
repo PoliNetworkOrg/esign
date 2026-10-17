@@ -5,7 +5,7 @@ set -euo pipefail
 cd /src
 PIN=12345678
 CONTROL=http://127.0.0.1:35999
-export SIGN_AGENT_TEST_PIN=$PIN SIGN_AGENT_TEST_VCARD=$CONTROL
+export SIGN_AGENT_TEST_PIN=$PIN SIGN_AGENT_TEST_VCARD=$CONTROL SIGN_AGENT_TEST_CSCA=/tmp/csca.pem
 MIEKG=$(go list -m -f '{{.Dir}}' github.com/miekg/pkcs11)
 
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -20,7 +20,7 @@ vcard_pid=
 start_card() {
 	[ -n "$vcard_pid" ] && kill "$vcard_pid" && wait "$vcard_pid" 2>/dev/null || true
 	rm -f ~/.CIEPKI/*.cache
-	/tmp/cie-vcard -pin $PIN -cert-out /tmp/card.pem "$@" >/tmp/vcard.log 2>&1 &
+	/tmp/cie-vcard -pin $PIN -cert-out /tmp/card.pem -csca-out /tmp/csca.pem "$@" >/tmp/vcard.log 2>&1 &
 	vcard_pid=$!
 	for _ in $(seq 50); do
 		grep -q "card inserted" /tmp/vcard.log 2>/dev/null && break
