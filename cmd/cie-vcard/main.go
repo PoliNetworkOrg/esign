@@ -30,6 +30,7 @@ func main() {
 	pin := flag.String("pin", "12345678", "card PIN")
 	variant := flag.String("variant", "nxp", "chip family: nxp, gemalto or unlisted")
 	certOut := flag.String("cert-out", "", "write the citizen and issuer certificates (PEM) to this file")
+	cscaOut := flag.String("csca-out", "", "write the test CSCA certificate (PEM), the trust anchor of the card's SOD, to this file")
 	trace := flag.Bool("trace", false, "log every APDU")
 	flag.Parse()
 
@@ -53,6 +54,11 @@ func main() {
 			out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c})...)
 		}
 		if err := os.WriteFile(*certOut, out, 0o644); err != nil {
+			log.Fatal(err)
+		}
+	}
+	if *cscaOut != "" {
+		if err := os.WriteFile(*cscaOut, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: card.CSCACertificate().Raw}), 0o644); err != nil {
 			log.Fatal(err)
 		}
 	}

@@ -46,6 +46,9 @@ var ErrNoService = errors.New("smart-card service unavailable")
 // Provider is the direct CIE provider.
 type Provider struct {
 	conn Connector
+	// TrustAnchors replace the pinned Italian CSCA certificates (ias.ItalianCSCAs) that the card's document security
+	// object must chain to. Only tests set them.
+	TrustAnchors []*x509.Certificate
 
 	mu sync.Mutex // held from Open to Close: one card session at a time
 
@@ -168,6 +171,7 @@ func (p *Provider) Open(_ context.Context, pin string) (token.Session, error) {
 		return nil, classify(err, false)
 	}
 	card := ias.NewCard(conn, r.ATR)
+	card.TrustAnchors = p.TrustAnchors
 	if err := card.Authenticate(pin); err != nil {
 		_ = conn.Close()
 		p.mu.Unlock()
@@ -190,7 +194,10 @@ func classifyCode(err error, pinSent bool) error {
 	var pe *ias.PINError
 	var se *ias.StatusError
 	var proto *ias.ProtocolError
+	var trust *ias.TrustError
 	switch {
+	case errors.As(err, &trust):
+		return token.Errorf(token.CodeCardUntrusted, "%v", err)
 	case errors.Is(err, ias.ErrCardRemoved):
 		return token.Errorf(token.CodeCardRemoved, "%v", err)
 	case errors.As(err, &pe):

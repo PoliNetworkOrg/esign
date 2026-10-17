@@ -277,3 +277,20 @@ func TestNoFallbackAfterPIN(t *testing.T) {
 		t.Fatalf("fallback without PINSent: next opened %d times", next.opened)
 	}
 }
+
+// untrustedCard is a provider that refuses a card failing the authenticity checks, before the PIN.
+type untrustedCard struct{ pinSentNotPaired }
+
+func (u *untrustedCard) Open(context.Context, string) (token.Session, error) {
+	u.opened++
+	return nil, token.Errorf(token.CodeCardUntrusted, "SOD not signed by a trusted CSCA")
+}
+
+// TestNoFallbackForUntrustedCard: a card that may be counterfeit must not get the PIN through another provider.
+func TestNoFallbackForUntrustedCard(t *testing.T) {
+	first, next := &untrustedCard{}, &noCard{}
+	s := New(Options{Port: 47321, AllowedOrigins: []string{dashboard}, Providers: []token.Provider{first, next}, Version: "test"})
+	if _, _, err := s.open(t.Context(), "12345678"); token.CodeOf(err) != token.CodeCardUntrusted || next.opened != 0 {
+		t.Fatalf("error %v, next opened %d times", err, next.opened)
+	}
+}

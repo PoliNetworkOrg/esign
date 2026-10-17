@@ -43,6 +43,9 @@ type Card struct {
 	family Family
 	// Rand supplies DH exponents and DAPP challenges; crypto/rand when nil.
 	Rand io.Reader
+	// TrustAnchors are the CSCA certificates the document security object must chain to; ItalianCSCAs when nil.
+	// Only tests set them.
+	TrustAnchors []*x509.Certificate
 
 	sm *smState
 
@@ -51,6 +54,9 @@ type Card struct {
 	x          *big.Int
 
 	intAuthN, intAuthE *big.Int // EF 1004
+	intAuthFile        []byte   // EF 1004 as read
+	dhFile             []byte   // EF.DH (D004) as read
+	sod                *SOD
 	rootN, rootE       *big.Int // CV root key from the card
 	rootCAR, rootAID   []byte
 
@@ -244,6 +250,7 @@ func (c *Card) readIntAuthKey() error {
 	if err != nil {
 		return err
 	}
+	c.intAuthFile = data
 	top, _, err := ParseTLV(data)
 	if err != nil {
 		return &ProtocolError{Op: "internal authentication key", Err: err}
@@ -504,6 +511,101 @@ func (c *Card) checkChip(resp, rndIFD []byte) error {
 	}
 	if subtle.ConstantTimeCompare(h.Sum(nil), got) != 1 {
 		return &ProtocolError{Op: "DAPP", Err: errDAPP}
+	}
+	return nil
+}
+
+// TrustError means the card could not prove it is a genuine CIE: its document security object is missing, not signed
+// by a trusted Document Signer, or does not cover the keys and parameters the card presented. It is reported before
+// any PIN is sent.
+type TrustError struct{ Err error }
+
+func (e *TrustError) Error() string { return "card authenticity: " + e.Err.Error() }
+func (e *TrustError) Unwrap() error { return e.Err }
+
+func untrusted(format string, args ...any) error {
+	return &TrustError{Err: fmt.Errorf(format, args...)}
+}
+
+// readDHFile reads EF.DH (D004) in the IAS DF, which the SOD hashes as data group 1B.
+func (c *Card) readDHFile() error {
+	data, err := c.ReadFile(FileDH)
+	if err != nil {
+		if isStatus(err) {
+			return untrusted("EF.DH is not readable: %v", err)
+		}
+		return err
+	}
+	c.dhFile = data
+	return nil
+}
+
+// verifySOD authenticates what DAPP will rely on, before the PIN is sent: the SOD (EF 1006) must be signed by a
+// Document Signer issued by a pinned CSCA, and its hashes must match EF 1004 (the chip key DAPP verifies with) and
+// EF.DH, whose values must be the DH parameters the card returned through GET DATA. The official middleware checks
+// the same hashes when pairing (CSP/AbilitaCIE.cpp) but not the signer's chain.
+func (c *Card) verifySOD() error {
+	data, err := c.ReadFile(FileSOD)
+	if err != nil {
+		if isStatus(err) {
+			return untrusted("EF.SOD is not readable: %v", err)
+		}
+		return err
+	}
+	anchors := c.TrustAnchors
+	if anchors == nil {
+		anchors = ItalianCSCAs()
+	}
+	sod, err := VerifySOD(data, anchors)
+	if err != nil {
+		return &TrustError{Err: err}
+	}
+	if err := sod.Check(DGIntAuthKey, c.intAuthFile); err != nil {
+		return &TrustError{Err: err}
+	}
+	if err := sod.Check(DGDH, c.dhFile); err != nil {
+		return &TrustError{Err: err}
+	}
+	if err := containsDHParameters(c.dhFile, c.g, c.p, c.q); err != nil {
+		return &TrustError{Err: err}
+	}
+	c.sod = sod
+	return nil
+}
+
+// containsDHParameters checks that g, p and q appear among the primitive values of EF.DH. The layout of the file on
+// every card generation is not documented, so the values are matched wherever they are, ignoring leading zeros.
+func containsDHParameters(file []byte, params ...[]byte) error {
+	n, err := EncodedLength(file)
+	if err != nil {
+		return fmt.Errorf("EF.DH: %v", err)
+	}
+	found := map[string]bool{}
+	var walk func([]byte, int) error
+	walk = func(data []byte, depth int) error {
+		objs, err := ParseTLVs(data)
+		if err != nil || depth > 8 {
+			return errors.New("EF.DH is not BER")
+		}
+		for _, o := range objs {
+			first := o.Raw[0]
+			if first&0x20 != 0 {
+				if err := walk(o.Value, depth+1); err != nil {
+					return err
+				}
+				continue
+			}
+			found[string(bytes.TrimLeft(o.Value, "\x00"))] = true
+		}
+		return nil
+	}
+	if err := walk(file[:n], 0); err != nil {
+		return err
+	}
+	for i, v := range params {
+		if !found[string(bytes.TrimLeft(v, "\x00"))] {
+			return fmt.Errorf("DH parameter %d from GET DATA is not in EF.DH", i)
+		}
 	}
 	return nil
 }

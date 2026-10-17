@@ -57,6 +57,8 @@ type Options struct {
 	MinimalPublicValue     bool
 	// CertificateFileSize pads EF 1003 with zeros to this size, like a fixed-size file on a card.
 	CertificateFileSize int
+	// SODWithPSS signs EF.SOD and the Document Signer with SHA-512 and RSASSA-PSS, like cards under CSCA04 and later.
+	SODWithPSS bool
 }
 
 const (
@@ -149,7 +151,7 @@ func New(opts Options) (*Card, error) {
 	}
 	c := &Card{opts: opts, keys: keys, pin: opts.PIN, puk: opts.PUK, pinLeft: pinTries, pukLeft: pukTries}
 	var err error
-	if c.pki, err = makePKI(opts.Identity, keys, time.Now()); err != nil {
+	if c.pki, err = makePKI(opts.Identity, keys, time.Now(), opts.SODWithPSS); err != nil {
 		return nil, err
 	}
 	if err := c.personalize(); err != nil {
@@ -201,13 +203,13 @@ func (c *Card) personalize() error {
 		ias.FileServiceKey:  {df: dfCIE, data: service},
 	}
 	s, err := sod(map[byte][]byte{
-		0xA1: sum([]byte(id.NIS)),
-		0xA2: sum([]byte(id.Serial)),
-		0xA3: sum(c.pki.citizen.Raw),
-		0xA4: sum(intAuth),
-		0xA5: sum(service),
-		0x1B: sum(dh),
-	}, c.pki.docSigner, c.keys.DocSigner)
+		0xA1: []byte(id.NIS),
+		0xA2: []byte(id.Serial),
+		0xA3: c.pki.citizen.Raw,
+		0xA4: intAuth,
+		0xA5: service,
+		0x1B: dh,
+	}, c.pki.docSigner, c.keys.DocSigner, c.opts.SODWithPSS)
 	if err != nil {
 		return err
 	}
@@ -223,6 +225,9 @@ func (c *Card) ATR() []byte { return append([]byte{}, c.atr...) }
 
 // Certificate is the citizen certificate in EF 1003.
 func (c *Card) Certificate() *x509.Certificate { return c.pki.citizen }
+
+// CSCACertificate is the test Country Signing CA behind EF.SOD: the trust anchor to use instead of the Italian ones.
+func (c *Card) CSCACertificate() *x509.Certificate { return c.pki.csca }
 
 // IssuerCertificate is the CA that issued the citizen certificate.
 func (c *Card) IssuerCertificate() *x509.Certificate { return c.pki.issuer }

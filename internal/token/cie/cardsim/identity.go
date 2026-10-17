@@ -38,11 +38,12 @@ type Keys struct {
 	Service   *rsa.PrivateKey // key 83, PIN-less service authentication, public in EF 1005
 	Issuer    *rsa.PrivateKey // CA issuing the citizen certificate
 	DocSigner *rsa.PrivateKey // signs EF.SOD
+	CSCA      *rsa.PrivateKey // test Country Signing CA, issuer of the Document Signer
 }
 
 // GenerateKeys creates a fresh set of RSA-2048 keys. It takes a few seconds; tests share one set.
 func GenerateKeys() (*Keys, error) {
-	var ks [5]*rsa.PrivateKey
+	var ks [6]*rsa.PrivateKey
 	for i := range ks {
 		k, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
@@ -50,7 +51,7 @@ func GenerateKeys() (*Keys, error) {
 		}
 		ks[i] = k
 	}
-	return &Keys{Citizen: ks[0], IntAuth: ks[1], Service: ks[2], Issuer: ks[3], DocSigner: ks[4]}, nil
+	return &Keys{Citizen: ks[0], IntAuth: ks[1], Service: ks[2], Issuer: ks[3], DocSigner: ks[4], CSCA: ks[5]}, nil
 }
 
 var (
@@ -61,10 +62,12 @@ var (
 
 // pki is the certificates a card is personalized with.
 type pki struct {
-	issuer, citizen, docSigner *x509.Certificate
+	issuer, citizen, docSigner, csca *x509.Certificate
 }
 
-func makePKI(id Identity, k *Keys, now time.Time) (*pki, error) {
+// makePKI issues the citizen certificate under a test issuing CA, and the Document Signer under a test CSCA (with
+// RSASSA-PSS SHA-512 like CSCA04 and later when pss is set).
+func makePKI(id Identity, k *Keys, now time.Time, pss bool) (*pki, error) {
 	caTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{Country: []string{"IT"}, Organization: []string{"Simulated Ministero dell'Interno"}, CommonName: "Simulated CIE Issuing CA"},
@@ -102,19 +105,40 @@ func makePKI(id Identity, k *Keys, now time.Time) (*pki, error) {
 		return nil, err
 	}
 	citizen, _ := x509.ParseCertificate(cDER)
-	dsTmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(2),
-		Subject:      pkix.Name{Country: []string{"IT"}, CommonName: "Simulated CIE Document Signer"},
-		NotBefore:    now.Add(-24 * time.Hour),
-		NotAfter:     now.AddDate(10, 0, 0),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
+	sigAlg := x509.SHA256WithRSA
+	if pss {
+		sigAlg = x509.SHA512WithRSAPSS
 	}
-	dsDER, err := x509.CreateCertificate(rand.Reader, dsTmpl, ca, &k.DocSigner.PublicKey, k.Issuer)
+	cscaTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(10),
+		Subject:               pkix.Name{Country: []string{"IT"}, Organization: []string{"Simulated Ministry of Interior"}, CommonName: "Simulated Italian Country Signer CA"},
+		NotBefore:             now.Add(-48 * time.Hour),
+		NotAfter:              now.AddDate(15, 0, 0),
+		IsCA:                  true,
+		MaxPathLenZero:        true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		SignatureAlgorithm:    sigAlg,
+	}
+	cscaDER, err := x509.CreateCertificate(rand.Reader, cscaTmpl, cscaTmpl, &k.CSCA.PublicKey, k.CSCA)
+	if err != nil {
+		return nil, err
+	}
+	csca, _ := x509.ParseCertificate(cscaDER)
+	dsTmpl := &x509.Certificate{
+		SerialNumber:       big.NewInt(2),
+		Subject:            pkix.Name{Country: []string{"IT"}, CommonName: "Simulated CIE Document Signer"},
+		NotBefore:          now.Add(-24 * time.Hour),
+		NotAfter:           now.AddDate(10, 0, 0),
+		KeyUsage:           x509.KeyUsageDigitalSignature,
+		SignatureAlgorithm: sigAlg,
+	}
+	dsDER, err := x509.CreateCertificate(rand.Reader, dsTmpl, csca, &k.DocSigner.PublicKey, k.CSCA)
 	if err != nil {
 		return nil, err
 	}
 	ds, _ := x509.ParseCertificate(dsDER)
-	return &pki{issuer: ca, citizen: citizen, docSigner: ds}, nil
+	return &pki{issuer: ca, citizen: citizen, docSigner: ds, csca: csca}, nil
 }
 
 // pan builds EF.SN.ICC: five header bytes, the NIS in BCD, one trailing byte.
@@ -150,6 +174,9 @@ var (
 	oidContentType   = []byte{0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x03}
 	oidMessageDigest = []byte{0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x04}
 	oidSHA256RSA     = []byte{0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x0B}
+	oidSHA512        = []byte{0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03}
+	oidRSAPSS        = []byte{0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x0A}
+	oidMGF1          = []byte{0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x08}
 )
 
 func tlv(tag uint32, parts ...[]byte) []byte {
@@ -160,38 +187,59 @@ func tlv(tag uint32, parts ...[]byte) []byte {
 	return ias.EncodeTLV(tag, v)
 }
 
-// sod builds EF.SOD as the official pairing code parses it (CSP/IAS.cpp VerificaSOD): tag 77 around a CMS
-// ContentInfo with SignedData over an ICAO
-// LDS security object with SHA-256 hashes of the NIS (A1), serial (A2), certificate (A3), EF 1004 (A4), EF 1005 (A5)
-// and EF.DH (1B), signed with RSA PKCS#1 v1.5 SHA-256. Data group numbers are one-byte INTEGERs, which is what the
-// reference's ByteArrayToVar(content, BYTE) reads.
-func sod(hashes map[byte][]byte, ds *x509.Certificate, key *rsa.PrivateKey) ([]byte, error) {
+// sod builds EF.SOD as the official pairing code parses it (CSP/IAS.cpp VerificaSOD, or VerificaSODPSS with pss):
+// tag 77 around a CMS ContentInfo with SignedData over an ICAO LDS security object with the hashes of the NIS (A1),
+// serial (A2), certificate (A3), EF 1004 (A4), EF 1005 (A5) and EF.DH (1B); SHA-256 and RSA PKCS#1 v1.5, or SHA-512
+// and RSASSA-PSS like newer cards. Data group numbers are one-byte INTEGERs, which is what the reference's
+// ByteArrayToVar(content, BYTE) reads. files holds each data group's content.
+func sod(files map[byte][]byte, ds *x509.Certificate, key *rsa.PrivateKey, pss bool) ([]byte, error) {
+	h, hashOID := crypto.SHA256, oidSHA256
+	if pss {
+		h, hashOID = crypto.SHA512, oidSHA512
+	}
+	digest := func(b []byte) []byte {
+		d := h.New()
+		d.Write(b)
+		return d.Sum(nil)
+	}
 	var dgs []byte
 	for _, n := range []byte{0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x1B} {
-		dgs = append(dgs, tlv(0x30, ias.EncodeTLV(0x02, []byte{n}), ias.EncodeTLV(0x04, hashes[n]))...)
+		dgs = append(dgs, tlv(0x30, ias.EncodeTLV(0x02, []byte{n}), ias.EncodeTLV(0x04, digest(files[n])))...)
 	}
-	lds := tlv(0x30, ias.EncodeTLV(0x02, []byte{0}), tlv(0x30, ias.EncodeTLV(0x06, oidSHA256)), tlv(0x30, dgs))
-	ldsDigest := sha256.Sum256(lds)
+	lds := tlv(0x30, ias.EncodeTLV(0x02, []byte{0}), tlv(0x30, ias.EncodeTLV(0x06, hashOID)), tlv(0x30, dgs))
 	attrs := append(
 		tlv(0x30, ias.EncodeTLV(0x06, oidContentType), tlv(0x31, ias.EncodeTLV(0x06, oidLDSSecurity))),
-		tlv(0x30, ias.EncodeTLV(0x06, oidMessageDigest), tlv(0x31, ias.EncodeTLV(0x04, ldsDigest[:])))...,
+		tlv(0x30, ias.EncodeTLV(0x06, oidMessageDigest), tlv(0x31, ias.EncodeTLV(0x04, digest(lds))))...,
 	)
-	signed := sha256.Sum256(ias.EncodeTLV(0x31, attrs))
-	sig, err := rsa.SignPKCS1v15(nil, key, crypto.SHA256, signed[:])
+	signed := digest(ias.EncodeTLV(0x31, attrs))
+	var sig, sigAlg []byte
+	var err error
+	if pss {
+		sig, err = rsa.SignPSS(rand.Reader, key, h, signed, &rsa.PSSOptions{SaltLength: 64})
+		params := tlv(0x30,
+			tlv(0xA0, tlv(0x30, ias.EncodeTLV(0x06, hashOID))),
+			tlv(0xA1, tlv(0x30, ias.EncodeTLV(0x06, oidMGF1), tlv(0x30, ias.EncodeTLV(0x06, hashOID)))),
+			tlv(0xA2, ias.EncodeTLV(0x02, []byte{64})),
+		)
+		sigAlg = tlv(0x30, ias.EncodeTLV(0x06, oidRSAPSS), params)
+	} else {
+		sig, err = rsa.SignPKCS1v15(nil, key, h, signed)
+		sigAlg = tlv(0x30, ias.EncodeTLV(0x06, oidSHA256RSA), []byte{0x05, 0x00})
+	}
 	if err != nil {
 		return nil, err
 	}
 	signerInfo := tlv(0x30,
 		ias.EncodeTLV(0x02, []byte{1}),
 		tlv(0x30, ds.RawIssuer, ias.EncodeTLV(0x02, derInt(ds.SerialNumber))),
-		tlv(0x30, ias.EncodeTLV(0x06, oidSHA256)),
+		tlv(0x30, ias.EncodeTLV(0x06, hashOID)),
 		ias.EncodeTLV(0xA0, attrs),
-		tlv(0x30, ias.EncodeTLV(0x06, oidSHA256RSA), []byte{0x05, 0x00}),
+		sigAlg,
 		ias.EncodeTLV(0x04, sig),
 	)
 	signedData := tlv(0x30,
 		ias.EncodeTLV(0x02, []byte{3}),
-		tlv(0x31, tlv(0x30, ias.EncodeTLV(0x06, oidSHA256))),
+		tlv(0x31, tlv(0x30, ias.EncodeTLV(0x06, hashOID))),
 		tlv(0x30, ias.EncodeTLV(0x06, oidLDSSecurity), tlv(0xA0, ias.EncodeTLV(0x04, lds))),
 		tlv(0xA0, ds.Raw),
 		tlv(0x31, signerInfo),

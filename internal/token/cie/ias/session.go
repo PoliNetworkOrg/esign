@@ -39,8 +39,9 @@ func (e *PINError) Retries() int {
 var ErrNotAuthenticated = errors.New("card session not authenticated")
 
 // Authenticate runs the reference's login sequence (PKCS11/CIEP11Template.cpp CIEtemplateLogin) and then reads the
-// certificate: select IAS and the CIE DF, read the DH parameters and EF 1004, read the CV root key, DH key agreement,
-// DAPP, VERIFY with the full eight-digit PIN, and EF 1003 through the secure channel. A wrong PIN is reported as a
+// certificate: select IAS and read EF.DH, select the CIE DF, read the DH parameters and EF 1004, check them against
+// the document security object (VerifySOD; a *TrustError otherwise), read the CV root key, DH key agreement, DAPP,
+// VERIFY with the full eight-digit PIN, and EF 1003 through the secure channel. A wrong PIN is reported as a
 // *PINError after one attempt; nothing is retried.
 func (c *Card) Authenticate(pin string) error {
 	if len(pin) != 8 {
@@ -51,9 +52,15 @@ func (c *Card) Authenticate(pin string) error {
 			return errors.New("the CIE PIN has 8 digits")
 		}
 	}
-	steps := []func() error{c.SelectIAS, c.SelectCIE, c.initDH, c.readIntAuthKey, c.readRootKey, c.keyExchange, c.dapp}
+	steps := []func() error{c.SelectIAS, c.readDHFile, c.SelectCIE, c.initDH, c.readIntAuthKey, c.verifySOD, c.readRootKey, c.keyExchange, c.dapp}
 	for _, step := range steps {
 		if err := step(); err != nil {
+			var proto *ProtocolError
+			if errors.As(err, &proto) && c.sm != nil {
+				// A malformed or unauthenticated answer once the secure channel exists, or a chip that fails DAPP:
+				// the card cannot be trusted with the PIN.
+				return &TrustError{Err: err}
+			}
 			return err
 		}
 	}
