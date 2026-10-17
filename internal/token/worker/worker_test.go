@@ -111,7 +111,7 @@ func TestSignThroughWorker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if len(s.Chain()) != 1 || s.Certificate().Subject.CommonName != "SVILUPPO PROVA" {
+	if len(s.Chain()) != 1 || s.Certificate().Subject.CommonName != "SVLPRV80A01F205X/041001234567" {
 		t.Fatalf("certificate %v, chain %d", s.Certificate().Subject, len(s.Chain()))
 	}
 	if st := p.Status(ctx); st.Available {

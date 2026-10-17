@@ -179,7 +179,7 @@ func TestOpenSign(t *testing.T) {
 		if err != nil {
 			t.Fatalf("variant %d: open: %v", v, err)
 		}
-		if s.Certificate().Subject.CommonName != "ROSSI MARIO" {
+		if s.Certificate().Subject.CommonName != "RSSMRA80A01F205X/123456789012" {
 			t.Fatalf("certificate %s", s.Certificate().Subject)
 		}
 		sig, err := s.SignDigest(t.Context(), digest())
