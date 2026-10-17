@@ -66,14 +66,23 @@ card pairing that Software CIE keeps in its own folder.
 ### Linux
 
 Packages for x86_64 (amd64) and arm64 (aarch64) install `pcscd` and the reader drivers, start the agent right away and
-at every login, and register the `polinetwork-esign://` link handler. Updates come with the rest of the system.
+at every login, and register the `polinetwork-esign://` link handler. On Debian, Ubuntu and Fedora, updates come with
+the rest of the system.
 
-**Arch Linux, Omarchy, Manjaro, EndeavourOS** and other Arch-based systems, from the
-[AUR](https://aur.archlinux.org/packages/polinetwork-esign-bin):
+**Arch Linux, Omarchy, Manjaro, EndeavourOS** and other Arch-based systems: download
+`polinetwork-esign-<version>-1-x86_64.pkg.tar.zst` (or `-aarch64`) from the
+[latest release](https://github.com/PoliNetworkOrg/esign/releases/latest) and run
+`sudo pacman -U ./polinetwork-esign-<version>-1-x86_64.pkg.tar.zst`, or paste this, which does the same for the latest
+version:
 
 ```sh
-yay -S polinetwork-esign-bin    # or: paru -S polinetwork-esign-bin
+v=$(curl -fsSLo /dev/null -w '%{url_effective}' https://github.com/PoliNetworkOrg/esign/releases/latest); v=${v##*/v}
+pkg="polinetwork-esign-$v-1-$(uname -m).pkg.tar.zst"
+curl -fLO "https://github.com/PoliNetworkOrg/esign/releases/download/v$v/$pkg" && sudo pacman -U "./$pkg"
 ```
+
+Run the same commands again to update. An AUR package (`yay -S polinetwork-esign-bin`), which would update with the
+system, is coming.
 
 **Debian, Ubuntu, Linux Mint, Pop!_OS** and derivatives: download `polinetwork-esign_<version>_amd64.deb` (or
 `_arm64.deb`) from the [latest release](https://github.com/PoliNetworkOrg/esign/releases/latest), then

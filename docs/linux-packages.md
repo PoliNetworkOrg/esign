@@ -3,12 +3,12 @@
 Every release builds, for amd64 and arm64, with [nfpm](https://nfpm.goreleaser.com) (`packaging/linux/nfpm.yaml`,
 `scripts/build-linux.sh`):
 
-| File                                                  | For                                             |
-| ----------------------------------------------------- | ----------------------------------------------- |
-| `polinetwork-esign_<version>_<amd64\|arm64>.deb`      | Debian, Ubuntu and derivatives                  |
-| `polinetwork-esign-<version>-1.<x86_64\|aarch64>.rpm` | Fedora                                          |
-| `polinetwork-esign-<version>-1-<arch>.pkg.tar.zst`    | Arch, repackaged by the AUR package             |
-| `polinetwork-esign-<version>-linux-<arch>.tar.gz`     | anything else, with `polinetwork-esign install` |
+| File                                                  | For                                               |
+| ----------------------------------------------------- | ------------------------------------------------- |
+| `polinetwork-esign_<version>_<amd64\|arm64>.deb`      | Debian, Ubuntu and derivatives                    |
+| `polinetwork-esign-<version>-1.<x86_64\|aarch64>.rpm` | Fedora                                            |
+| `polinetwork-esign-<version>-1-<arch>.pkg.tar.zst`    | Arch (`pacman -U`), repackaged by the AUR package |
+| `polinetwork-esign-<version>-linux-<arch>.tar.gz`     | anything else, with `polinetwork-esign install`   |
 
 All three packages install the same files (the binary in `/usr/bin`, the systemd user service, the link handler) and
 run the same scripts: `postinstall.sh` enables the user service for every user, enables `pcscd.socket` (Arch leaves it
@@ -21,7 +21,8 @@ For releases that are not pre-releases, `.github/workflows/release.yml` also pub
   the latest release only. The `.deb` and `.rpm` install the repository's configuration (`nfpm-repository.yaml`), so a
   user who installed a downloaded package gets later versions from `apt upgrade` or `dnf upgrade`. The `.rpm` files
   attached to the GitHub release are signed with the same key.
-- **The AUR package** [`polinetwork-esign-bin`](https://aur.archlinux.org/packages/polinetwork-esign-bin),
+- **The AUR package** (not published yet: AUR registrations are closed, so Arch users install the release's Arch
+  package with `pacman -U` for now) [`polinetwork-esign-bin`](https://aur.archlinux.org/packages/polinetwork-esign-bin),
   from `packaging/aur/PKGBUILD`: `scripts/aur-package.sh` fills in the version and checksums, takes the install script
   from the release's Arch package, writes `.SRCINFO`, builds it once as a check, and the workflow pushes it.
 
