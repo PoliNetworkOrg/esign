@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"os/exec"
@@ -263,4 +264,52 @@ func TestPKCS11SpecPlans(t *testing.T) {
 	if spec := pkcs11Spec(config.Config{Worker: config.WorkerAuto}, dir, "opencie", notBinary, nil); spec.ArchsErr == nil || spec.Plan.Worker {
 		t.Errorf("unreadable module: %+v", spec)
 	}
+}
+
+// TestWorkerPairsCIE runs the official middleware in a worker against the simulated, unpaired card of
+// scripts/interop/run.sh (SIGN_AGENT_TEST_CIEMW is the module): the worker's Open pairs the card through the module.
+func TestWorkerPairsCIE(t *testing.T) {
+	module, pin := os.Getenv("SIGN_AGENT_TEST_CIEMW"), os.Getenv("SIGN_AGENT_TEST_PIN")
+	if module == "" || pin == "" {
+		t.Skip("SIGN_AGENT_TEST_CIEMW and SIGN_AGENT_TEST_PIN are not set")
+	}
+	home, _ := os.UserHomeDir()
+	caches := func() []string {
+		m, _ := filepath.Glob(filepath.Join(home, ".CIEPKI", "*.cache"))
+		return m
+	}
+	for _, f := range caches() {
+		_ = os.Remove(f)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := worker.New(worker.Options{
+		Name:    "cie-mw",
+		Command: []string{exe, "worker", "--provider", "cie-mw", "--module", module},
+		Env:     append(os.Environ(), mainEnv+"=1"),
+	})
+	defer p.Close()
+	ctx := t.Context()
+	_, err = p.Open(ctx, "00000000")
+	var te *token.Error
+	if !errors.As(err, &te) || te.Code != token.CodePinIncorrect || te.RetriesLeft != 2 || !te.PINSent || len(caches()) != 0 {
+		t.Fatalf("unpaired, wrong PIN: %v", err)
+	}
+	t.Logf("unpaired, wrong PIN through the worker: %v (retries left %d, PIN sent)", err, te.RetriesLeft)
+	s, err := p.Open(ctx, pin)
+	if err != nil {
+		t.Fatalf("open with pairing: %v", err)
+	}
+	defer s.Close()
+	digest := sha256.Sum256([]byte("attributes"))
+	sig, err := s.SignDigest(ctx, digest[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rsa.VerifyPKCS1v15(s.Certificate().PublicKey.(*rsa.PublicKey), crypto.SHA256, digest[:], sig); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("paired in the worker (%v), signed as %s, verified", caches(), s.Certificate().Subject.CommonName)
 }

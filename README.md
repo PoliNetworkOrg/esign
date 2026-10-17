@@ -14,13 +14,20 @@ finalized by the PoliNetwork backend (PAdES), the agent only signs a digest with
 - A CIE (Carta d'Identità Elettronica 3.0) and its 8-digit PIN.
 - A contactless (NFC) smart-card reader, for example a bit4id miniLector AIR NFC. Most readers work without drivers on
   Windows and macOS; on Linux they need `pcscd` (see below).
-- The CIE software for your system, either of:
-  - the official middleware: **Software CIE** (Mac App Store) on macOS, **CIE ID** on Windows and Linux, from
-    [cartaidentita.interno.gov.it](https://www.cartaidentita.interno.gov.it/pa-e-imprese/documentazione-middleware-cie/).
-    Open it once with the card on the reader and add your CIE ("Abbina CIE" / "Aggiungi CIE"): the agent can only use
-    cards paired on this computer.
-  - [OpenCIE](https://github.com/M0Rf30/opencie-pkcs11), which needs no pairing: put its PKCS#11 module
-    (`libopencie-pkcs11.so`, `.dylib` or `.dll`) next to the agent or in the agent's configuration folder.
+- Optionally, CIE software for your system. The agent tries, in order:
+  - `cie-mw`, the official middleware: **Software CIE** (Mac App Store) on macOS, **CIE ID** on Windows and Linux,
+    from [cartaidentita.interno.gov.it](https://www.cartaidentita.interno.gov.it/pa-e-imprese/documentazione-middleware-cie/).
+    It works only with cards "paired" on this computer, a one-time step with the full PIN. If the card is not paired
+    yet, the agent pairs it through the middleware the first time you sign.
+  - `opencie`, [OpenCIE](https://github.com/M0Rf30/opencie-pkcs11): put its PKCS#11 module
+    (`libopencie-pkcs11.so`, `.dylib` or `.dll`) next to the agent or in the agent's configuration folder. It also
+    keeps a pairing cache, which the agent creates the same way.
+  - `cie`, built into the agent: it talks to the card directly over PC/SC with the CIE's IAS protocol (secure
+    channel, chip authentication, PIN, signature), with no other software and no pairing. It is new and has not been
+    tested on physical cards yet.
+
+  The PIN reaches at most one of them: once a provider has sent it to the card, a failure is reported, never retried
+  elsewhere.
 
 ## Install
 
@@ -109,7 +116,8 @@ Common reports:
   app, which contains both.
 - **readers: none** — the reader is not connected, or (Linux) `pcscd` is not running.
 - **card: false** — put the CIE flat on the reader and keep it still.
-- "This CIE is not set up on this computer yet" when signing — pair the card in Software CIE / CIE ID.
+- "This CIE is not set up on this computer yet" when signing — the middleware does not export its pairing function:
+  pair the card in Software CIE / CIE ID.
 - **agent: NOT running; another program uses port 47321** — close that program, or change `port` in the configuration
   (the dashboard expects 47321).
 
@@ -157,7 +165,40 @@ go test ./...
 go run ./cmd/sign-agent --dev --soft   # development key, PIN 12345678
 ```
 
-cgo is required (PKCS#11, PC/SC). Builds:
+cgo is required (PKCS#11, PC/SC). On a Mac whose Command Line Tools are older than the running macOS, point cgo at
+an installed SDK, for example `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk go test ./...`.
+
+### CIE interop harness
+
+No physical CIE is needed to test the CIE code: `internal/token/cie/cardsim` is a card simulator (files, DH
+parameters, DAPP keys, citizen key and CIE-shaped certificate, PIN and PUK counters, secure messaging checked on
+every protected command), and `cmd/cie-vcard` serves it as a virtual card to vsmartcard's `vpcd` reader driver.
+
+```sh
+./scripts/interop/run.sh
+```
+
+builds a Docker image (linux/amd64; cached after the first, slow build) with the official middleware's PKCS#11 module
+compiled from source (`scripts/interop/build-official.sh`), OpenCIE's released module, vpcd built from source and
+pcsc-lite, then checks, each on a fresh card:
+
+1. the official module alone, from a small C program (`scripts/interop/p11check.c`): unpaired `C_OpenSession`
+   failure, `AbilitaCIE` pairing with a wrong and then the right PIN, `C_Login` with the last four digits and
+   `C_Sign(CKM_RSA_PKCS)` over a SHA-256 DigestInfo, verified with OpenSSL;
+2. the agent's `cie` provider through pcsc-lite: status, wrong PIN with the remaining attempts, signature, card
+   pulled out mid-session;
+3. the agent's `cie-mw` provider on the official module, in process and in a worker: automatic pairing (wrong PIN
+   first), signatures, wrong PIN once paired;
+4. the same for `opencie` on OpenCIE;
+5. `sign-agent status`.
+
+The official sources are built unmodified, without optimization like the project's Eclipse "Debug" build (an
+optimizing compiler turns their undefined behaviour into crashes). The simulator signs the reference's terminal CV
+certificate check with an RSA modulus generated for the reference's fixed root private exponent, since the real root
+modulus exists only on cards; and its document security object is signed by a test document signer, which the
+official code accepts because it checks the SOD signature but not the signer's chain.
+
+Builds:
 
 ```sh
 ./scripts/build-macos.sh v1.2.3    # on a Mac: universal .app, .zip, .dmg

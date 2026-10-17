@@ -67,6 +67,11 @@ start_card
 SIGN_AGENT_TEST_CIEMW=$CIE_MW_MODULE go test -count=1 -v -run 'TestOfficialMiddlewareInterop' ./internal/token/p11/ 2>/dev/null \
 	| grep -E '^(=== RUN|--- |\s+cie_interop_test|ok|FAIL|PASS)'
 
+step "c2. The same, with the module in a worker process (sign-agent worker), pairing inside the worker"
+start_card
+SIGN_AGENT_TEST_CIEMW=$CIE_MW_MODULE go test -count=1 -v -run 'TestWorkerPairsCIE' ./cmd/sign-agent/ 2>/dev/null \
+	| grep -E '^(=== RUN|--- |\s+main_test|ok|FAIL|PASS)'
+
 step "d. Agent's p11 provider (opencie) on OpenCIE's released module, pairing automatically"
 start_card
 SIGN_AGENT_TEST_OPENCIE=$OPENCIE_MODULE go test -count=1 -v -run 'TestOpenCIEInterop' ./internal/token/p11/ 2>/dev/null \
