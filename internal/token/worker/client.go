@@ -25,6 +25,8 @@ type Options struct {
 	Note string
 	// Stderr receives the child's diagnostics; os.Stderr when nil.
 	Stderr io.Writer
+	// Prepare, when set, runs before each start of the child, e.g. to create the directory its HOME names.
+	Prepare func() error
 }
 
 // Provider is a token.Provider served by a child process. The child starts on first use and is restarted on the next
@@ -76,6 +78,11 @@ func (p *Provider) start() (*process, error) {
 	}
 	if len(p.opts.Command) == 0 {
 		return nil, fmt.Errorf("no worker command")
+	}
+	if p.opts.Prepare != nil {
+		if err := p.opts.Prepare(); err != nil {
+			return nil, err
+		}
 	}
 	cmd := exec.Command(p.opts.Command[0], p.opts.Command[1:]...)
 	cmd.Env = p.opts.Env

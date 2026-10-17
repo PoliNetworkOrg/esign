@@ -1,0 +1,11 @@
+[Unit]
+Description=PoliNetwork Sign Agent (CIE signing for the PoliNetwork dashboard)
+After=graphical-session.target pcscd.socket
+
+[Service]
+ExecStart="/usr/bin/polinetwork-sign-agent" serve
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
