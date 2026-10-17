@@ -143,6 +143,7 @@ type req struct {
 	method, path, host, origin, site string
 	body                             any
 	noHeader                         bool
+	cookie                           *http.Cookie
 }
 
 func do(t *testing.T, s *Server, r req) *httptest.ResponseRecorder {
@@ -167,6 +168,9 @@ func do(t *testing.T, s *Server, r req) *httptest.ResponseRecorder {
 	}
 	if r.body != nil {
 		h.Header.Set("Content-Type", "application/json")
+	}
+	if r.cookie != nil {
+		h.AddCookie(r.cookie)
 	}
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, h)

@@ -43,27 +43,38 @@
           <span id="card-text">Looking for the card reader…</span>
         </div>
 
-        <label for="pin">CIE PIN</label>
-        <input
-          id="pin"
-          type="text"
-          class="masked"
-          inputmode="numeric"
-          pattern="[0-9]{8}"
-          maxlength="8"
-          minlength="8"
-          required
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
-          spellcheck="false"
-          data-1p-ignore
-          data-lpignore="true"
-          data-bwignore
-          data-form-type="other"
-          aria-describedby="pin-hint"
-        />
-        <p id="pin-hint" class="hint">The 8 digits of your CIE PIN. It stays on this computer.</p>
+        <div id="remembered" class="remembered" hidden>
+          <p id="remembered-text"></p>
+          <button type="button" class="link" id="forget">Use a different PIN</button>
+        </div>
+
+        <div id="pin-fields">
+          <label for="pin">CIE PIN</label>
+          <input
+            id="pin"
+            type="text"
+            class="masked"
+            inputmode="numeric"
+            pattern="[0-9]{8}"
+            maxlength="8"
+            minlength="8"
+            required
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore
+            data-form-type="other"
+            aria-describedby="pin-hint"
+          />
+          <p id="pin-hint" class="hint">The 8 digits of your CIE PIN. It stays on this computer.</p>
+          <label id="remember-row" class="check-row" hidden>
+            <input id="remember" type="checkbox" />
+            <span id="remember-text"></span>
+          </label>
+        </div>
 
         <p id="error" class="error" role="alert" hidden></p>
 

@@ -33,6 +33,20 @@ finalized by the PoliNetwork backend (PAdES), the agent only signs a digest with
   The PIN reaches at most one of them: once a provider has sent it to the card, a failure is reported, never retried
   elsewhere.
 
+### Remembering the PIN
+
+When you sign, you can tick **Remember the PIN on this computer for 30 minutes**. For the next 30 minutes, signing
+needs only a click on **Sign**: you don't type the PIN again. The agent keeps the PIN in memory only, never on disk,
+and forgets it:
+
+- 30 minutes after you typed it, however often it was used;
+- as soon as the CIE leaves the reader, so the PIN is never sent to a card placed later;
+- when the card on the reader is not the one the PIN was typed for, or the card reports any error;
+- when you choose **Use a different PIN**, type the PIN without ticking the box, or the agent stops.
+
+Only the browser where you typed the PIN can use it, through a random key in a cookie that the page's scripts cannot
+read. The dashboard never sees the PIN.
+
 ## Install
 
 Download the file for your system from the [latest release](https://github.com/PoliNetworkOrg/esign/releases/latest).
