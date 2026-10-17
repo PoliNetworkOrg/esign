@@ -29,7 +29,18 @@ type Config struct {
 	OpenCIEModule string `json:"openCieModule,omitempty"`
 	// Providers in order of preference: "cie-mw" (official middleware), "opencie", "cie" (built-in PC/SC), "soft".
 	Providers []string `json:"providers,omitempty"`
+	// Worker says when PKCS#11 modules run in a child process: WorkerAuto (default), WorkerAlways or WorkerNever.
+	Worker string `json:"worker,omitempty"`
 }
+
+// Worker modes. Auto uses a child process when the module needs one: another CPU architecture (the official macOS
+// middleware is x86_64 only), or a different environment (the macOS App Store middleware); Always also isolates
+// modules that could be loaded in-process, so a crashing middleware cannot take the agent down.
+const (
+	WorkerAuto   = "auto"
+	WorkerAlways = "always"
+	WorkerNever  = "never"
+)
 
 // Dir is the agent's per-user configuration directory.
 func Dir() (string, error) {
@@ -58,6 +69,13 @@ func Load(path string) (Config, error) {
 	}
 	if len(c.AllowedOrigins) == 0 {
 		c.AllowedOrigins = append([]string{}, DefaultOrigins...)
+	}
+	switch c.Worker {
+	case "":
+		c.Worker = WorkerAuto
+	case WorkerAuto, WorkerAlways, WorkerNever:
+	default:
+		return c, fmt.Errorf("%s: worker must be %q, %q or %q", path, WorkerAuto, WorkerAlways, WorkerNever)
 	}
 	if len(c.Providers) == 0 {
 		c.Providers = []string{"cie-mw", "opencie", "cie"}

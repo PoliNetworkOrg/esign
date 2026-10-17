@@ -21,6 +21,7 @@ import (
 
 	"github.com/PoliNetworkOrg/sign-agent/internal/backend"
 	"github.com/PoliNetworkOrg/sign-agent/internal/certinfo"
+	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
 	"github.com/PoliNetworkOrg/sign-agent/internal/token"
 )
 
@@ -140,6 +141,8 @@ func OriginAllowed(allowed []string, origin string) bool {
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
+		// Lets a second agent, or the polinetwork-sign:// link handler, recognize that the agent already runs.
+		h.Set("Server", launch.ServerHeader+s.opts.Version)
 		h.Set("Cache-Control", "no-store")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")

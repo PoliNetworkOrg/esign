@@ -1,0 +1,63 @@
+name: Build
+
+# Builds every release artifact; called by CI and by Release.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version stamped into the binaries (main.version) and package names
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux binaries are built on the oldest supported runners, so they need an older glibc.
+          - target: linux-amd64
+            runner: ubuntu-22.04
+            script: linux
+          - target: linux-arm64
+            runner: ubuntu-22.04-arm
+            script: linux
+          - target: windows-amd64
+            runner: ubuntu-22.04
+            script: windows
+          - target: macos-universal
+            runner: macos-latest
+            script: macos
+    runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Install Linux build dependencies
+        if: matrix.script == 'linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libpcsclite-dev
+          # nfpm needs a newer Go than the agent pins: let go fetch it for this install only.
+          GOTOOLCHAIN=auto go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+      - name: Install MinGW-w64
+        if: matrix.script == 'windows'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-mingw-w64-x86-64 zip
+      - name: Build
+        run: ./scripts/build-${{ matrix.script }}.sh "$VERSION"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.zip
+            dist/*.dmg
+          if-no-files-found: error

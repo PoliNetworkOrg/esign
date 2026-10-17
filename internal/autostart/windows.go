@@ -3,18 +3,17 @@
 package autostart
 
 import (
-	"os/exec"
-	"syscall"
+	"errors"
+	"strings"
 
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
 )
 
 const (
 	runKey    = `Software\Microsoft\Windows\CurrentVersion\Run`
 	valueName = "PoliNetworkSignAgent"
-	// createNoWindow keeps a console window from appearing for the background agent.
-	createNoWindow = 0x08000000
-	detached       = 0x00000008
 )
 
 // Install adds the agent to the current user's Run key and starts it now.
@@ -27,19 +26,51 @@ func Install(exe string) error {
 	if err := k.SetStringValue(valueName, `"`+exe+`" serve`); err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "serve")
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow | detached, HideWindow: true}
-	return cmd.Start()
+	return launch.SpawnDetached(exe, "serve")
 }
 
-// Uninstall removes the Run entry. A running agent keeps running until the user logs out.
+// Stop does nothing: the Run key does not track the process; the installer stops it by path.
+func Stop() {}
+
+// Start starts the installed agent now.
+func Start() error {
+	exe, ok := Installed()
+	if !ok {
+		return ErrNotInstalled
+	}
+	return launch.SpawnDetached(exe, "serve")
+}
+
+// Installed returns the executable registered to start at login.
+func Installed() (string, bool) {
+	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.QUERY_VALUE)
+	if err != nil {
+		return "", false
+	}
+	defer k.Close()
+	v, _, err := k.GetStringValue(valueName)
+	if err != nil {
+		return "", false
+	}
+	exe, ok := strings.CutPrefix(v, `"`)
+	if !ok {
+		return "", false
+	}
+	exe, _, ok = strings.Cut(exe, `"`)
+	return exe, ok
+}
+
+// Describe names the registration, for diagnostics.
+func Describe() string { return `HKCU\` + runKey + `\` + valueName }
+
+// Uninstall removes the Run entry. A running agent is stopped by the installer.
 func Uninstall() error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)
 	if err != nil {
 		return nil
 	}
 	defer k.Close()
-	if err := k.DeleteValue(valueName); err != nil && err != registry.ErrNotExist {
+	if err := k.DeleteValue(valueName); err != nil && !errors.Is(err, registry.ErrNotExist) {
 		return err
 	}
 	return nil
