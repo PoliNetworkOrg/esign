@@ -46,15 +46,21 @@
         <label for="pin">CIE PIN</label>
         <input
           id="pin"
-          name="pin"
-          type="password"
+          type="text"
+          class="masked"
           inputmode="numeric"
           pattern="[0-9]{8}"
           maxlength="8"
           minlength="8"
           required
           autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
           spellcheck="false"
+          data-1p-ignore
+          data-lpignore="true"
+          data-bwignore
+          data-form-type="other"
           aria-describedby="pin-hint"
         />
         <p id="pin-hint" class="hint">The 8 digits of your CIE PIN. It stays on this computer.</p>

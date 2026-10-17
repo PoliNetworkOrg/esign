@@ -13,6 +13,10 @@ const tickets = readTickets()
 const origin = sessionStorage.getItem("origin") || ""
 
 const $ = (id) => document.getElementById(id)
+
+// Without CSS masking the PIN would show in clear, so fall back to a password field.
+if (!CSS.supports("-webkit-text-security", "disc")) $("pin").type = "password"
+
 const sections = ["loading", "fatal", "form", "working", "done"]
 let pollTimer = 0
 let signing = false
@@ -282,6 +286,8 @@ $("form").addEventListener("submit", async (event) => {
     $("pin").focus()
     return
   }
+  // Cleared before the form goes away, so a browser watching the submission has nothing to offer to save.
+  $("pin").value = ""
   formError("")
   signing = true
   $("working-title").textContent = pending.length === 1 ? "Signing…" : `Signing ${pending.length} documents…`

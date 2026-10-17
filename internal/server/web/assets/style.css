@@ -239,6 +239,13 @@ input {
   font-variant-numeric: tabular-nums;
 }
 
+/* The PIN is a text field masked here, not a password field, so browsers and password managers do not offer to fill or
+   save it. */
+input.masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+
 input:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--focus);
