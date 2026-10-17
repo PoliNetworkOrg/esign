@@ -23,10 +23,10 @@ csr)
 		openssl genrsa -out "$key" 2048 2>/dev/null
 		chmod 600 "$key"
 	fi
-	openssl req -new -key "$key" -out "$dir/developer-id.csr" \
+	openssl req -new -key "$key" -out "$dir/developer-id.certSigningRequest" \
 		-subj "/emailAddress=admin@polinetwork.org/CN=PoliNetwork APS/C=IT"
-	echo "Certificate signing request: $dir/developer-id.csr"
-	echo "Upload it at https://developer.apple.com/account/resources/certificates/add (Developer ID Application)."
+	echo "Certificate signing request: $dir/developer-id.certSigningRequest"
+	echo "Upload it at https://developer.apple.com/account/resources/certificates/add (Developer ID > Developer ID Application, G2)."
 	;;
 secrets)
 	cer="${2:?developer_id.cer}" p8="${3:?AuthKey.p8}" key_id="${4:?key id}" issuer="${5:?issuer id}"
