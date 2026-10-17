@@ -193,9 +193,9 @@ pcsc-lite, then checks, each on a fresh card:
 5. `sign-agent status`.
 
 The official sources are built unmodified, without optimization like the project's Eclipse "Debug" build (an
-optimizing compiler turns their undefined behaviour into crashes). The simulator signs the reference's terminal CV
-certificate check with an RSA modulus generated for the reference's fixed root private exponent, since the real root
-modulus exists only on cards; and its document security object is signed by a test document signer, which the
+optimizing compiler turns their undefined behaviour into crashes). The simulator verifies the terminal CV
+certificate that the reference builds against an RSA modulus generated for the reference's fixed root private
+exponent, since the real root modulus exists only on cards; and its document security object is signed by a test document signer, which the
 official code accepts because it checks the SOD signature but not the signer's chain.
 
 Builds:
