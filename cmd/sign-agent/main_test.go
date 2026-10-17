@@ -11,10 +11,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/PoliNetworkOrg/sign-agent/internal/config"
 	"github.com/PoliNetworkOrg/sign-agent/internal/install"
 	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
 	"github.com/PoliNetworkOrg/sign-agent/internal/token"
@@ -231,5 +233,34 @@ func TestBundleCommand(t *testing.T) {
 	}
 	if bundle, ok := install.BundleOf(filepath.Join(app, "Contents", "MacOS", install.BundleExec)); !ok || bundle != app {
 		t.Fatalf("BundleOf: %q %v", bundle, ok)
+	}
+}
+
+func TestPKCS11SpecPlans(t *testing.T) {
+	// Any binary of this architecture stands in for a module: only its header is read.
+	module, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for mode, wantWorker := range map[string]bool{config.WorkerAuto: false, config.WorkerAlways: true, config.WorkerNever: false} {
+		spec := pkcs11Spec(config.Config{Worker: mode}, dir, "opencie", module, nil)
+		if spec.PlanErr != nil || spec.Plan.Worker != wantWorker || !slices.Contains(spec.Archs, runtime.GOARCH) {
+			t.Errorf("%s: plan %+v, err %v, archs %v", mode, spec.Plan, spec.PlanErr, spec.Archs)
+		}
+		if _, isWorker := spec.Provider.(*worker.Provider); isWorker != wantWorker {
+			t.Errorf("%s: provider %T", mode, spec.Provider)
+		}
+	}
+	missing := pkcs11Spec(config.Config{Worker: config.WorkerAuto}, dir, "cie-mw", "", []string{filepath.Join(dir, "none.so")})
+	if missing.Module != "" || missing.Provider.Status(t.Context()).Available {
+		t.Errorf("missing module: %+v", missing)
+	}
+	notBinary := filepath.Join(dir, "module.so")
+	if err := os.WriteFile(notBinary, []byte("not a library"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if spec := pkcs11Spec(config.Config{Worker: config.WorkerAuto}, dir, "opencie", notBinary, nil); spec.ArchsErr == nil || spec.Plan.Worker {
+		t.Errorf("unreadable module: %+v", spec)
 	}
 }
