@@ -2,8 +2,12 @@
 # Builds the macOS app on a Mac: ./scripts/build-macos.sh [version]
 #
 # dist/PoliNetwork Sign Agent.app holds a universal binary (arm64 + x86_64): the agent runs natively, and its x86_64
-# half runs the Intel-only official CIE middleware through Rosetta. The bundle is signed ad hoc only; see the README
-# for notarization. Also writes dist/PoliNetwork-Sign-Agent-<version>-macos.zip and, when hdiutil works, a .dmg.
+# half runs the Intel-only official CIE middleware through Rosetta. Also writes
+# dist/PoliNetwork-Sign-Agent-<version>-macos.zip and, when hdiutil works, a .dmg.
+#
+# Signing: with MACOS_SIGN_IDENTITY set (a "Developer ID Application: …" identity in the keychain) the app is signed
+# with the hardened runtime; with APPLE_API_KEY_PATH, APPLE_API_KEY_ID and APPLE_API_ISSUER_ID also set, the zip and
+# the dmg are notarized and stapled. Without them the app is signed ad hoc, which macOS only runs after a warning.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 version="${1:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
@@ -33,14 +37,40 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
 
-# Ad-hoc signature. Notarization needs a Developer ID, the hardened runtime and the
-# com.apple.security.cs.disable-library-validation entitlement (the CIE middleware is signed by another team).
-codesign --force --sign - --timestamp=none "$app"
+identity="${MACOS_SIGN_IDENTITY:-}"
+notarize=false
+if [ -n "$identity" ] && [ -n "${APPLE_API_KEY_PATH:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER_ID:-}" ]; then
+	notarize=true
+fi
+
+notarize_file() {
+	xcrun notarytool submit "$1" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" \
+		--issuer "$APPLE_API_ISSUER_ID" --wait --timeout 30m
+}
+
+if [ -n "$identity" ]; then
+	# Developer ID with the hardened runtime, inside out. The entitlement lets the agent load the CIE middleware,
+	# which another team (IPZS) signs.
+	codesign --force --options runtime --timestamp --entitlements packaging/macos/entitlements.plist \
+		--sign "$identity" "$app/Contents/MacOS/sign-agent"
+	codesign --force --options runtime --timestamp --entitlements packaging/macos/entitlements.plist \
+		--sign "$identity" "$app"
+else
+	codesign --force --sign - --timestamp=none "$app"
+fi
 codesign --verify --strict --verbose=2 "$app"
 
 zip="dist/PoliNetwork-Sign-Agent-$version-macos.zip"
 rm -f "$zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+if $notarize; then
+	notarize_file "$zip"
+	xcrun stapler staple "$app"
+	# Zip again so the downloaded app carries its ticket for offline Gatekeeper checks.
+	rm -f "$zip"
+	ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+	spctl --assess --type execute --verbose=2 "$app"
+fi
 echo "$zip"
 
 dmg="dist/PoliNetwork-Sign-Agent-$version-macos.dmg"
@@ -49,6 +79,11 @@ staging="$work/dmg"
 mkdir -p "$staging"
 ditto "$app" "$staging/PoliNetwork Sign Agent.app"
 if hdiutil create -quiet -volname "PoliNetwork Sign Agent" -srcfolder "$staging" -ov -format UDZO "$dmg"; then
+	if [ -n "$identity" ]; then codesign --force --timestamp --sign "$identity" "$dmg"; fi
+	if $notarize; then
+		notarize_file "$dmg"
+		xcrun stapler staple "$dmg"
+	fi
 	echo "$dmg"
 else
 	echo "hdiutil failed: no .dmg" >&2

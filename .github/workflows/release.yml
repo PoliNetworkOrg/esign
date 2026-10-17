@@ -13,6 +13,8 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       version: ${{ github.ref_name }}
+      sign: true
+    secrets: inherit
 
   release:
     name: Publish

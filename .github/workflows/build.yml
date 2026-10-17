@@ -8,6 +8,11 @@ on:
         description: Version stamped into the binaries (main.version) and package names
         required: true
         type: string
+      sign:
+        description: Sign (and notarize) with the PoliNetwork certificates when their secrets are set
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -50,9 +55,49 @@ jobs:
       - name: Install MinGW-w64
         if: matrix.script == 'windows'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-mingw-w64-x86-64 zip
+      - name: Import the Developer ID certificate
+        # Signs and notarizes macOS releases once the secrets exist (see docs/code-signing.md); otherwise ad hoc.
+        if: matrix.script == 'macos' && inputs.sign
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          if [ -z "$CERTIFICATE_P12" ]; then
+            echo "::warning::No Developer ID certificate secret: the macOS app is signed ad hoc"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -hex 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          existing=()
+          while IFS= read -r line; do existing+=("$(echo "$line" | tr -d '" ')"); done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+          identity="$(security find-identity -v -p codesigning "$keychain" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')"
+          if [ -z "$identity" ]; then echo "::error::No Developer ID Application identity in the certificate"; exit 1; fi
+          echo "MACOS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          if [ -n "$API_KEY_P8" ]; then
+            printf '%s' "$API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+            {
+              echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/AuthKey.p8"
+              echo "APPLE_API_KEY_ID=$API_KEY_ID"
+              echo "APPLE_API_ISSUER_ID=$API_ISSUER_ID"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning::No App Store Connect API key secret: the macOS app is signed but not notarized"
+          fi
       - name: Build
         run: ./scripts/build-${{ matrix.script }}.sh "$VERSION"
       - uses: actions/upload-artifact@v7
+        id: upload
         with:
           name: ${{ matrix.target }}
           path: |
@@ -60,4 +105,26 @@ jobs:
             dist/*.deb
             dist/*.zip
             dist/*.dmg
+          if-no-files-found: error
+      # Windows releases are signed by SignPath Foundation (free for open source) once the project is approved and its
+      # settings exist: docs/code-signing.md. Until then the .exe is unsigned.
+      - name: Sign the Windows build with SignPath
+        if: matrix.script == 'windows' && inputs.sign && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/signed
+      - name: Replace the artifact with the signed build
+        if: matrix.script == 'windows' && inputs.sign && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: dist/signed/*
+          overwrite: true
           if-no-files-found: error

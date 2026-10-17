@@ -225,3 +225,9 @@ GitHub release (a pre-release for tags such as `v1.2.3-rc.1`).
   resource would help too.
 - **Test on real hardware**: Windows 10/11 x64 (and Windows on ARM, which runs the x64 build emulated), Intel and Apple
   Silicon Macs with Software CIE, and the Linux distributions to support, each with a paired card.
+
+## Code signing
+
+Windows: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org). macOS: signed and notarized with PoliNetwork APS's Developer ID. See
+[`docs/code-signing.md`](docs/code-signing.md) for the policy and setup.
