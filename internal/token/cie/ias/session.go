@@ -78,6 +78,7 @@ func (c *Card) Authenticate(pin string) error {
 
 // verifyPIN sends VERIFY with the PIN as eight ASCII digits, never BCD, through the secure channel.
 func (c *Card) verifyPIN(pin string) error {
+	c.pinSent = true
 	_, sw, err := c.send("VERIFY", command{cla: 0x00, ins: 0x20, p1: 0x00, p2: pinRef, data: []byte(pin)})
 	if err != nil {
 		return err
@@ -90,6 +91,10 @@ func (c *Card) verifyPIN(pin string) error {
 	}
 	return &StatusError{Op: "VERIFY", SW: sw}
 }
+
+// PINSent reports whether a VERIFY reached the card: from then on a failure may have used a PIN attempt, and the
+// caller must not fall back to another way of signing.
+func (c *Card) PINSent() bool { return c.pinSent }
 
 // Certificate is the citizen authentication certificate read during Authenticate.
 func (c *Card) Certificate() *x509.Certificate { return c.cert }

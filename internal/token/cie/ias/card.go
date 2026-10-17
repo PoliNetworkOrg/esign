@@ -54,6 +54,7 @@ type Card struct {
 	rootN, rootE       *big.Int // CV root key from the card
 	rootCAR, rootAID   []byte
 
+	pinSent       bool
 	authenticated bool
 	cert          *x509.Certificate
 	certDER       []byte
