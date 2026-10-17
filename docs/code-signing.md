@@ -18,7 +18,8 @@ releases never break.
 
 ## macOS: Developer ID and notarization
 
-Done once, by someone with the Account Holder or Admin role on the PoliNetwork APS Apple Developer account.
+Done once. Creating a Developer ID certificate and enabling the App Store Connect API both need the **Account Holder**
+of the PoliNetwork APS Apple Developer account (team `842636PS9J`); Admins can't create Developer ID certificates.
 
 1. On the Mac that holds the private key, create the certificate request (already done once; the key is in
    `~/dev/polinetwork/.signing/sign-agent/`, never commit it):
@@ -27,10 +28,15 @@ Done once, by someone with the Account Holder or Admin role on the PoliNetwork A
    ./scripts/setup-macos-signing.sh csr
    ```
 
-2. At <https://developer.apple.com/account/resources/certificates/add> choose **Developer ID Application**
-   (profile type G2 Sub-CA), upload `developer-id.csr`, download the `.cer`.
-3. At <https://appstoreconnect.apple.com/access/integrations/api> create a **Team key** with the **Developer** role,
-   download `AuthKey_<KEY ID>.p8` (only downloadable once) and note the **Key ID** and the **Issuer ID** above the list.
+2. At <https://developer.apple.com/account> (team PoliNetwork APS) open **Certificates, Identifiers & Profiles** →
+   **Certificates** → **+**. Under **Software** choose **Developer ID** → **Continue** → **Developer ID Application**
+   (Sub-CA **G2**), upload `developer-id.certSigningRequest`, then **Download** the `.cer`
+   (`developerID_application.cer`).
+3. At <https://appstoreconnect.apple.com> open **Users and Access** → **Integrations** (App Store Connect API is
+   selected). The first time, the Account Holder clicks **Request Access** and accepts the terms; Apple approves it,
+   usually quickly. Then **Team Keys** → **Generate API Key** (or **+**), name it `sign-agent notarization`, access
+   **Developer**, **Generate**. Download `AuthKey_<KEY ID>.p8` (only downloadable once); the **Key ID** is in the key's
+   row and the **Issuer ID** is above the list.
 4. Store the GitHub secrets (needs `gh` with admin rights on the repository):
 
    ```sh
