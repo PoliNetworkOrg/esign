@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/autostart"
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/autostart"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
 )
 
-const desktopName = "polinetwork-sign-agent.desktop"
+const desktopName = "polinetwork-esign.desktop"
 
 func home() string {
 	h, _ := os.UserHomeDir()
@@ -41,7 +41,7 @@ func Location() (exe, app string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	return filepath.Join(h, ".local", "bin", "polinetwork-sign-agent"), "", nil
+	return filepath.Join(h, ".local", "bin", "polinetwork-esign"), "", nil
 }
 
 // packaged reports whether exe was installed by a system package, which owns its location and updates.
@@ -93,7 +93,7 @@ func stopRunning(path string) {
 	}
 }
 
-// Install copies src to ~/.local/bin (unless a package installed it), registers the polinetwork-sign:// handler and
+// Install copies src to ~/.local/bin (unless a package installed it), registers the polinetwork-esign:// handler and
 // starts the agent at login.
 func Install(src, version string) (Result, error) {
 	exe, _, err := Location()
@@ -103,6 +103,7 @@ func Install(src, version string) (Result, error) {
 	if packaged(src) {
 		exe = src
 	}
+	removeLegacy()
 	autostart.Stop()
 	stopRunning(exe)
 	if !sameFile(src, exe) {
@@ -187,6 +188,7 @@ func Uninstall(self string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	removeLegacy()
 	if err := autostart.Uninstall(); err != nil {
 		return nil, err
 	}

@@ -6,7 +6,7 @@ import (
 
 	"github.com/miekg/pkcs11"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 )
 
 // The official middleware and OpenCIE keep the certificate and the first four PIN digits in a local cache written by

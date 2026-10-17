@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/autostart"
-	"github.com/PoliNetworkOrg/sign-agent/internal/config"
-	"github.com/PoliNetworkOrg/sign-agent/internal/install"
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/worker"
+	"github.com/PoliNetworkOrg/esign/internal/autostart"
+	"github.com/PoliNetworkOrg/esign/internal/config"
+	"github.com/PoliNetworkOrg/esign/internal/install"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/token/worker"
 )
 
 // doctor prints what support needs to know: the build, installation, configuration, running agent, every
@@ -25,7 +25,7 @@ func doctor(ctx context.Context, w io.Writer, cfg config.Config, configPath, dir
 	if err != nil {
 		archs = "unknown: " + err.Error()
 	}
-	fmt.Fprintf(w, "PoliNetwork Sign Agent %s\n", version)
+	fmt.Fprintf(w, "PoliNetwork eSign %s\n", version)
 	fmt.Fprintf(w, "  system:      %s/%s, %s\n", runtime.GOOS, runtime.GOARCH, osVersion())
 	fmt.Fprintf(w, "  executable:  %s (%s)\n", exe, archs)
 
@@ -35,7 +35,7 @@ func doctor(ctx context.Context, w io.Writer, cfg config.Config, configPath, dir
 	if registered, ok := autostart.Installed(); ok {
 		fmt.Fprintf(w, "  at login:    %s\n", registered)
 	} else {
-		fmt.Fprintln(w, "  at login:    not registered (run `sign-agent install`)")
+		fmt.Fprintln(w, "  at login:    not registered (run `esign install`)")
 	}
 	for _, d := range install.Describe() {
 		fmt.Fprintf(w, "  registers:   %s\n", d)

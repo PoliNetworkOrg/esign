@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 )
 
 // DefaultPIN is the PIN of a newly created software token.
@@ -129,7 +129,7 @@ func generate() (ca *x509.Certificate, key *rsa.PrivateKey, cert *x509.Certifica
 	now := time.Now()
 	caTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "PoliNetwork Sign Agent Development CA", Organization: []string{"PoliNetwork APS (development)"}, Country: []string{"IT"}},
+		Subject:               pkix.Name{CommonName: "PoliNetwork eSign Development CA", Organization: []string{"PoliNetwork APS (development)"}, Country: []string{"IT"}},
 		NotBefore:             now.Add(-time.Hour),
 		NotAfter:              now.AddDate(10, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,

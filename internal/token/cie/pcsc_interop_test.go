@@ -11,28 +11,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie"
+	"github.com/PoliNetworkOrg/esign/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie"
 )
 
 // TestPCSCInterop runs the provider through the real PC/SC stack. scripts/interop/run.sh sets it up: pcsc-lite with
-// the vpcd virtual reader, served by cmd/cie-vcard (SIGN_AGENT_TEST_VCARD is its control endpoint) with a card
-// whose PIN is SIGN_AGENT_TEST_PIN and whose counter is full.
+// the vpcd virtual reader, served by cmd/cie-vcard (ESIGN_TEST_VCARD is its control endpoint) with a card
+// whose PIN is ESIGN_TEST_PIN and whose counter is full.
 func TestPCSCInterop(t *testing.T) {
-	pin := os.Getenv("SIGN_AGENT_TEST_PIN")
-	control := os.Getenv("SIGN_AGENT_TEST_VCARD")
-	if os.Getenv("SIGN_AGENT_TEST_PCSC") == "" || pin == "" || control == "" {
-		t.Skip("SIGN_AGENT_TEST_PCSC, SIGN_AGENT_TEST_PIN and SIGN_AGENT_TEST_VCARD are not set")
+	pin := os.Getenv("ESIGN_TEST_PIN")
+	control := os.Getenv("ESIGN_TEST_VCARD")
+	if os.Getenv("ESIGN_TEST_PCSC") == "" || pin == "" || control == "" {
+		t.Skip("ESIGN_TEST_PCSC, ESIGN_TEST_PIN and ESIGN_TEST_VCARD are not set")
 	}
 	p := cie.New()
 	// The virtual card's SOD is signed under the simulator's test CSCA, which cie-vcard writes out.
-	anchor, err := os.ReadFile(os.Getenv("SIGN_AGENT_TEST_CSCA"))
+	anchor, err := os.ReadFile(os.Getenv("ESIGN_TEST_CSCA"))
 	if err != nil {
-		t.Fatalf("SIGN_AGENT_TEST_CSCA: %v", err)
+		t.Fatalf("ESIGN_TEST_CSCA: %v", err)
 	}
 	block, _ := pem.Decode(anchor)
 	if block == nil {
-		t.Fatal("SIGN_AGENT_TEST_CSCA is not PEM")
+		t.Fatal("ESIGN_TEST_CSCA is not PEM")
 	}
 	csca, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {

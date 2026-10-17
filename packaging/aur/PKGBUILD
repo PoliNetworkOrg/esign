@@ -1,0 +1,27 @@
+# Maintainer: PoliNetwork APS <admin@polinetwork.org>
+# Published to the AUR by .github/workflows/release.yml from github.com/PoliNetworkOrg/esign (packaging/aur), which
+# sets pkgver and the checksums and adds polinetwork-esign.install, the release package's install script.
+pkgname=polinetwork-esign-bin
+_pkgname=polinetwork-esign
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="Signs PDFs with the Italian electronic identity card (CIE) for the PoliNetwork dashboard"
+arch=('x86_64' 'aarch64')
+url="https://github.com/PoliNetworkOrg/esign"
+license=('MIT')
+depends=('glibc' 'pcsclite' 'ccid')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+install="$_pkgname.install"
+source_x86_64=("$url/releases/download/v$pkgver/$_pkgname-$pkgver-1-x86_64.pkg.tar.zst")
+source_aarch64=("$url/releases/download/v$pkgver/$_pkgname-$pkgver-1-aarch64.pkg.tar.zst")
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+	install -Dm755 "usr/bin/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+	install -Dm644 "usr/lib/systemd/user/$_pkgname.service" "$pkgdir/usr/lib/systemd/user/$_pkgname.service"
+	install -Dm644 "usr/share/applications/$_pkgname.desktop" "$pkgdir/usr/share/applications/$_pkgname.desktop"
+	install -Dm644 "usr/share/doc/$_pkgname/README.md" "$pkgdir/usr/share/doc/$_pkgname/README.md"
+	install -Dm644 "usr/share/licenses/$_pkgname/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

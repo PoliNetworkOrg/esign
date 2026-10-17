@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/autostart"
+	"github.com/PoliNetworkOrg/esign/internal/autostart"
 )
 
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -41,6 +41,7 @@ func Install(src, version string) (Result, error) {
 	}
 	res := Result{Exe: exe, App: app}
 	srcApp, inBundle := BundleOf(src)
+	removeLegacy()
 	autostart.Stop()
 	if !inBundle || !sameFile(srcApp, app) {
 		if err := os.MkdirAll(filepath.Dir(app), 0o755); err != nil {
@@ -85,6 +86,7 @@ func Uninstall(self string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	removeLegacy()
 	if err := autostart.Uninstall(); err != nil {
 		return nil, err
 	}

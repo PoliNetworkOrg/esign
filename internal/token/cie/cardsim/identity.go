@@ -13,7 +13,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie/ias"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie/ias"
 )
 
 // Identity is the citizen and document data on the card.

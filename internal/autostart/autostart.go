@@ -5,7 +5,7 @@ package autostart
 import "errors"
 
 // Label identifies the agent in the platform's service manager.
-const Label = "org.polinetwork.sign-agent"
+const Label = "org.polinetwork.esign"
 
 // ErrNotInstalled is returned by Start when the agent is not registered.
 var ErrNotInstalled = errors.New("the agent is not set to start at login")

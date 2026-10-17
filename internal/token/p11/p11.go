@@ -12,7 +12,7 @@ import (
 
 	"github.com/miekg/pkcs11"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 )
 
 // Provider is a PKCS#11 module.

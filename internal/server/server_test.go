@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/backend"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/soft"
+	"github.com/PoliNetworkOrg/esign/internal/backend"
+	"github.com/PoliNetworkOrg/esign/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token/soft"
 )
 
 const (

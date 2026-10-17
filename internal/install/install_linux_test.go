@@ -8,7 +8,7 @@ import (
 
 func TestSetDefault(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mimeapps.list")
-	const mime = "x-scheme-handler/polinetwork-sign"
+	const mime = "x-scheme-handler/polinetwork-esign"
 	if err := setDefault(path, mime, "a.desktop"); err != nil {
 		t.Fatal(err)
 	}

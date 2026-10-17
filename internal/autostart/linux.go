@@ -10,11 +10,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
 )
 
 // UnitName is the systemd user service.
-const UnitName = "polinetwork-sign-agent.service"
+const UnitName = "polinetwork-esign.service"
 
 func configHome() (string, error) {
 	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
@@ -32,7 +32,7 @@ func paths() (unit, desktop string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	return filepath.Join(cfg, "systemd", "user", UnitName), filepath.Join(cfg, "autostart", "polinetwork-sign-agent.desktop"), nil
+	return filepath.Join(cfg, "systemd", "user", UnitName), filepath.Join(cfg, "autostart", "polinetwork-esign.desktop"), nil
 }
 
 // systemUnits are where a package installs the user service, and where `systemctl --global enable` links it.
@@ -62,7 +62,7 @@ func unitFile() (string, bool) {
 func autostartEntry(exe string) string {
 	return fmt.Sprintf(`[Desktop Entry]
 Type=Application
-Name=PoliNetwork Sign Agent
+Name=PoliNetwork eSign
 Comment=CIE signing for the PoliNetwork dashboard
 Exec=%s serve
 Terminal=false

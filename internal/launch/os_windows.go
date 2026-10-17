@@ -37,7 +37,7 @@ func OpenBrowser(url string) error {
 // Message shows msg in a message box; it also goes to stderr.
 func Message(msg string, isError bool) {
 	os.Stderr.WriteString(msg + "\n")
-	title, _ := windows.UTF16PtrFromString("PoliNetwork Sign Agent")
+	title, _ := windows.UTF16PtrFromString("PoliNetwork eSign")
 	text, err := windows.UTF16PtrFromString(msg)
 	if err != nil {
 		return

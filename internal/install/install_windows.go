@@ -12,13 +12,13 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/autostart"
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/autostart"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
 )
 
 const (
 	schemeKey    = `Software\Classes\` + launch.Scheme
-	uninstallKey = `Software\Microsoft\Windows\CurrentVersion\Uninstall\PoliNetworkSignAgent`
+	uninstallKey = `Software\Microsoft\Windows\CurrentVersion\Uninstall\PoliNetworkESign`
 )
 
 // Location returns where Install copies the agent.
@@ -29,7 +29,7 @@ func Location() (exe, app string, err error) {
 			return "", "", err
 		}
 	}
-	return filepath.Join(dir, "PoliNetwork", "SignAgent", "sign-agent.exe"), "", nil
+	return filepath.Join(dir, "PoliNetwork", "eSign", "esign.exe"), "", nil
 }
 
 // IsInstalled reports whether exe is the installed copy and starts at login.
@@ -116,7 +116,7 @@ func deleteTree(path string) error {
 	return nil
 }
 
-// Install copies src to %LOCALAPPDATA%\PoliNetwork\SignAgent, registers the polinetwork-sign:// handler and an
+// Install copies src to %LOCALAPPDATA%\PoliNetwork\eSign, registers the polinetwork-esign:// handler and an
 // "Installed apps" entry, and starts the agent at login.
 func Install(src, version string) (Result, error) {
 	exe, _, err := Location()
@@ -124,6 +124,7 @@ func Install(src, version string) (Result, error) {
 		return Result{}, err
 	}
 	res := Result{Exe: exe}
+	removeLegacy()
 	stopRunning(exe)
 	if !sameFile(src, exe) {
 		if err := copyFile(src, exe, 0o755); err != nil {
@@ -131,7 +132,7 @@ func Install(src, version string) (Result, error) {
 		}
 	}
 	quoted := `"` + exe + `"`
-	if err := setValues(schemeKey, map[string]any{"": "URL:PoliNetwork Sign Agent", "URL Protocol": ""}); err != nil {
+	if err := setValues(schemeKey, map[string]any{"": "URL:PoliNetwork eSign", "URL Protocol": ""}); err != nil {
 		return res, err
 	}
 	if err := setValues(schemeKey+`\DefaultIcon`, map[string]any{"": quoted + ",0"}); err != nil {
@@ -141,7 +142,7 @@ func Install(src, version string) (Result, error) {
 		return res, err
 	}
 	if err := setValues(uninstallKey, map[string]any{
-		"DisplayName":     "PoliNetwork Sign Agent",
+		"DisplayName":     "PoliNetwork eSign",
 		"DisplayVersion":  bundleVersion(version),
 		"Publisher":       "PoliNetwork APS",
 		"DisplayIcon":     quoted + ",0",
@@ -162,6 +163,7 @@ func Uninstall(self string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	removeLegacy()
 	if err := autostart.Uninstall(); err != nil {
 		return nil, err
 	}

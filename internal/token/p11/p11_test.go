@@ -7,16 +7,16 @@ import (
 	"os"
 	"testing"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 )
 
-// TestModule runs against a real module: set SIGN_AGENT_TEST_PKCS11 to its path and SIGN_AGENT_TEST_PIN to the user
+// TestModule runs against a real module: set ESIGN_TEST_PKCS11 to its path and ESIGN_TEST_PIN to the user
 // PIN of a token holding an RSA key and its certificate (scripts/test-softhsm.sh prepares SoftHSM2 this way).
 func TestModule(t *testing.T) {
-	path := os.Getenv("SIGN_AGENT_TEST_PKCS11")
-	pin := os.Getenv("SIGN_AGENT_TEST_PIN")
+	path := os.Getenv("ESIGN_TEST_PKCS11")
+	pin := os.Getenv("ESIGN_TEST_PIN")
 	if path == "" || pin == "" {
-		t.Skip("SIGN_AGENT_TEST_PKCS11 and SIGN_AGENT_TEST_PIN are not set")
+		t.Skip("ESIGN_TEST_PKCS11 and ESIGN_TEST_PIN are not set")
 	}
 	p := New(Options{Name: "pkcs11", Path: path})
 	defer p.Close()

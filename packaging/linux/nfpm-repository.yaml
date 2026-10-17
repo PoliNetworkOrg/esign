@@ -1,0 +1,16 @@
+  # Appended to nfpm.yaml's contents once the repository key exists: the .deb and .rpm add the PoliNetwork package
+  # repository, so the agent updates with the system from then on (docs/linux-packages.md).
+  - src: packaging/linux/repository-key.asc
+    dst: /usr/share/keyrings/polinetwork-esign.asc
+    packager: deb
+  - src: packaging/linux/repository/polinetwork-esign.sources
+    dst: /etc/apt/sources.list.d/polinetwork-esign.sources
+    type: config
+    packager: deb
+  - src: packaging/linux/repository-key.asc
+    dst: /etc/pki/rpm-gpg/RPM-GPG-KEY-polinetwork-esign
+    packager: rpm
+  - src: packaging/linux/repository/polinetwork-esign.repo
+    dst: /etc/yum.repos.d/polinetwork-esign.repo
+    type: config|noreplace
+    packager: rpm

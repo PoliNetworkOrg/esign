@@ -3,7 +3,7 @@ package worker
 import (
 	"testing"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 )
 
 // TestWirePINSent: the worker must not lose the mark that keeps the agent from trying another provider.

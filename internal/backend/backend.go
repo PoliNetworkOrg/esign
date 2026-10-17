@@ -72,7 +72,7 @@ func New(origin, version string) *Client {
 			// The ticket is a bearer capability: never follow a redirect elsewhere with it.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
-		ua: "PoliNetwork-Sign-Agent/" + version,
+		ua: "PoliNetwork-eSign/" + version,
 	}
 }
 

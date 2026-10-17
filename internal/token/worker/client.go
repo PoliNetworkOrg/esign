@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 )
 
 // Options configures a provider that runs in a worker process.

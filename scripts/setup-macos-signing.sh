@@ -3,7 +3,7 @@
 #
 #   ./scripts/setup-macos-signing.sh csr
 #       Creates a private key and a certificate signing request in $SIGNING_DIR
-#       (default ~/dev/polinetwork/.signing/sign-agent, outside any repository).
+#       (default ~/dev/polinetwork/.signing/esign, outside any repository).
 #
 #   ./scripts/setup-macos-signing.sh secrets <developer_id.cer> <AuthKey_XXXXXXXXXX.p8> <key-id> <issuer-id>
 #       Builds a .p12 from the key and the Developer ID Application certificate downloaded from Apple, then stores the
@@ -11,8 +11,8 @@
 #
 # See docs/code-signing.md.
 set -euo pipefail
-dir="${SIGNING_DIR:-$HOME/dev/polinetwork/.signing/sign-agent}"
-repo="${REPO:-PoliNetworkOrg/sign-agent}"
+dir="${SIGNING_DIR:-$HOME/dev/polinetwork/.signing/esign}"
+repo="${REPO:-PoliNetworkOrg/esign}"
 key="$dir/developer-id.key"
 
 case "${1:-}" in

@@ -1,12 +1,14 @@
 // Package install copies the agent to a stable per-user location, starts it at login and registers the
-// polinetwork-sign:// link, all without administrator rights:
+// polinetwork-esign:// link, all without administrator rights:
 //
-//   - macOS: ~/Applications/PoliNetwork Sign Agent.app, a LaunchAgent, and the bundle's CFBundleURLTypes registered
+//   - macOS: ~/Applications/PoliNetwork eSign.app, a LaunchAgent, and the bundle's CFBundleURLTypes registered
 //     with Launch Services.
-//   - Windows: %LOCALAPPDATA%\PoliNetwork\SignAgent\sign-agent.exe, the HKCU Run key, HKCU\Software\Classes and an
+//   - Windows: %LOCALAPPDATA%\PoliNetwork\eSign\esign.exe, the HKCU Run key, HKCU\Software\Classes and an
 //     "Installed apps" entry.
-//   - Linux: ~/.local/bin/polinetwork-sign-agent (kept in place when a package installed it under /usr), a systemd user
-//     service or XDG autostart entry, and a desktop entry handling x-scheme-handler/polinetwork-sign.
+//   - Linux: ~/.local/bin/polinetwork-esign (kept in place when a package installed it under /usr), a systemd user
+//     service or XDG autostart entry, and a desktop entry handling x-scheme-handler/polinetwork-esign.
+//
+// Install and Uninstall also remove what versions up to v0.1.x, named PoliNetwork Sign Agent, registered.
 package install
 
 import (
@@ -16,8 +18,8 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/autostart"
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/autostart"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
 )
 
 // Result describes an installation.
@@ -55,7 +57,7 @@ func copyFile(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	defer in.Close()
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".sign-agent-*")
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".esign-*")
 	if err != nil {
 		return err
 	}
@@ -88,11 +90,11 @@ func bundleVersion(version string) string {
 	return m[1] + "." + m[2] + "." + m[3]
 }
 
-// DesktopEntry is the hidden Linux application entry that handles polinetwork-sign:// links with exe.
+// DesktopEntry is the hidden Linux application entry that handles polinetwork-esign:// links with exe.
 func DesktopEntry(exe string) string {
 	return fmt.Sprintf(`[Desktop Entry]
 Type=Application
-Name=PoliNetwork Sign Agent
+Name=PoliNetwork eSign
 Comment=Starts the agent that signs PDFs with your CIE for the PoliNetwork dashboard
 Exec=%s %s %%u
 Terminal=false
