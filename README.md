@@ -9,6 +9,146 @@ finalized by the PoliNetwork backend (PAdES), the agent only signs a digest with
 
 > Work in progress: see the tracker in the admin repository, `docs/esign/TRACKER.md`.
 
+## What you need
+
+- A CIE (Carta d'Identità Elettronica 3.0) and its 8-digit PIN.
+- A contactless (NFC) smart-card reader, for example a bit4id miniLector AIR NFC. Most readers work without drivers on
+  Windows and macOS; on Linux they need `pcscd` (see below).
+- The CIE software for your system, either of:
+  - the official middleware: **Software CIE** (Mac App Store) on macOS, **CIE ID** on Windows and Linux, from
+    [cartaidentita.interno.gov.it](https://www.cartaidentita.interno.gov.it/pa-e-imprese/documentazione-middleware-cie/).
+    Open it once with the card on the reader and add your CIE ("Abbina CIE" / "Aggiungi CIE"): the agent can only use
+    cards paired on this computer.
+  - [OpenCIE](https://github.com/M0Rf30/opencie-pkcs11), which needs no pairing: put its PKCS#11 module
+    (`libopencie-pkcs11.so`, `.dylib` or `.dll`) next to the agent or in the agent's configuration folder.
+
+## Install
+
+Download the file for your system from the [latest release](https://github.com/PoliNetworkOrg/sign-agent/releases/latest).
+Installing needs no administrator rights: the agent is installed for your user only, starts when you log in, and lets
+the dashboard start it with a `polinetwork-sign://open` link when it is not running.
+
+### macOS (Apple Silicon and Intel)
+
+1. Download `PoliNetwork-Sign-Agent-<version>-macos.dmg` (or the `.zip`) and open it.
+2. Open **PoliNetwork Sign Agent**. The app is not notarized yet, so macOS refuses the first time: open
+   **System Settings > Privacy & Security**, choose **Open Anyway** next to the message about PoliNetwork Sign Agent,
+   and confirm.
+3. The app copies itself to `~/Applications`, starts at login (it appears in **System Settings > General > Login
+   Items**) and opens `http://127.0.0.1:47321/` in your browser: "The agent is running".
+
+The official Software CIE module is built for Intel Macs only. On Apple Silicon the agent runs it in a helper process
+under Rosetta: if macOS offers to install Rosetta, accept (or run `softwareupdate --install-rosetta`). The first time you
+sign, macOS asks whether **PoliNetwork Sign Agent** may access data from other apps: allow it, so the agent can read the
+card pairing that Software CIE keeps in its own folder.
+
+### Windows
+
+1. Download `PoliNetwork-Sign-Agent-<version>-windows-amd64.zip`, extract it and double-click `sign-agent.exe`.
+2. The program is not code-signed yet: if SmartScreen warns, choose **More info > Run anyway**.
+3. It copies itself to `%LOCALAPPDATA%\PoliNetwork\SignAgent`, starts at login, appears in **Settings > Apps >
+   Installed apps**, and opens `http://127.0.0.1:47321/` in your browser.
+
+### Linux
+
+Debian, Ubuntu and derivatives (amd64 or arm64):
+
+```sh
+sudo apt install ./polinetwork-sign-agent_<version>_amd64.deb   # installs pcscd too
+systemctl --user start polinetwork-sign-agent                    # or log out and in again
+```
+
+Other distributions, from the `.tar.gz`:
+
+```sh
+tar xzf polinetwork-sign-agent-<version>-linux-amd64.tar.gz
+./polinetwork-sign-agent-<version>-linux-amd64/polinetwork-sign-agent install
+```
+
+`install` copies the agent to `~/.local/bin/polinetwork-sign-agent`, starts it with a systemd user service (or an XDG
+autostart entry without systemd) and registers the `polinetwork-sign://` link handler.
+
+Cards are read through `pcscd`, which must be installed and running:
+
+```sh
+sudo apt install pcscd          # Fedora: sudo dnf install pcsc-lite; Arch: sudo pacman -S pcsclite ccid
+sudo systemctl enable --now pcscd.socket
+```
+
+The official CIE ID middleware for Linux is published for x86_64 only (`.deb`, `.rpm`, `.tar.gz`); on arm64 use OpenCIE.
+
+## Using it
+
+In the dashboard, open a document and choose **Sign with CIE**. A small window from the agent asks for your PIN; keep
+the card on the reader until it says the document is signed. If the dashboard says the agent is not running, use its
+**Start the agent** link (or open the app again).
+
+A wrong PIN uses one of the card's three attempts; the agent never retries a PIN by itself. After three wrong PINs the
+card is blocked: unblock it with the PUK in the CIE software.
+
+## Troubleshooting
+
+`sign-agent doctor` prints what support needs: version and architecture, installation, configuration and allowed
+dashboards, whether the agent is running, each CIE provider's module path and architecture, how it is loaded, the
+readers it sees and whether a card is on them. It never asks for the PIN. Run it and send the output:
+
+| System  | Command                                                                                                    |
+| ------- | ---------------------------------------------------------------------------------------------------------- |
+| macOS   | `~/Applications/PoliNetwork\ Sign\ Agent.app/Contents/MacOS/sign-agent doctor`                             |
+| Windows | `& "$env:LOCALAPPDATA\PoliNetwork\SignAgent\sign-agent.exe" doctor > "$HOME\Desktop\doctor.txt"` (PowerShell) |
+| Linux   | `polinetwork-sign-agent doctor` (or `~/.local/bin/polinetwork-sign-agent doctor`)                           |
+
+On Windows the agent is a windowless program: in a terminal its output can appear after the prompt, so writing it to a
+file as above is easier.
+
+Common reports:
+
+- **module: not found** — the CIE software is not installed, or is installed somewhere unusual: set its path in the
+  configuration file (`pkcs11Module` or `openCieModule`).
+- **loading: impossible … x86_64 only** — an Apple Silicon Mac running a build without Intel code; install the release
+  app, which contains both.
+- **readers: none** — the reader is not connected, or (Linux) `pcscd` is not running.
+- **card: false** — put the CIE flat on the reader and keep it still.
+- "This CIE is not set up on this computer yet" when signing — pair the card in Software CIE / CIE ID.
+- **agent: NOT running; another program uses port 47321** — close that program, or change `port` in the configuration
+  (the dashboard expects 47321).
+
+Logs: macOS `~/Library/Logs/PoliNetwork Sign Agent.log`; Windows `%APPDATA%\PoliNetwork Sign Agent\sign-agent.log`;
+Linux `journalctl --user -u polinetwork-sign-agent`.
+
+## Configuration
+
+Optional, in `config.json` in the configuration folder (`doctor` prints it): `~/Library/Application Support/PoliNetwork
+Sign Agent` on macOS, `%APPDATA%\PoliNetwork Sign Agent` on Windows, `~/.config/PoliNetwork Sign Agent` on Linux.
+
+```json
+{
+  "port": 47321,
+  "allowedOrigins": ["https://admin.polinetwork.org"],
+  "providers": ["cie-mw", "opencie", "cie"],
+  "pkcs11Module": "/path/to/libcie-pkcs11.so",
+  "openCieModule": "/path/to/libopencie-pkcs11.so",
+  "worker": "auto"
+}
+```
+
+`worker` says when a PKCS#11 module runs in a separate helper process: `auto` when needed (another CPU architecture,
+or Software CIE's environment), `always` (a crashing middleware cannot stop the agent), or `never`.
+
+## Commands
+
+| Command                  | What it does                                                                 |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `sign-agent install`     | Install for this user, start at login, register `polinetwork-sign://` links  |
+| `sign-agent uninstall`   | Undo `install` and stop the agent                                            |
+| `sign-agent doctor`      | Print the diagnostic report                                                  |
+| `sign-agent status`      | Print readers, cards and providers                                           |
+| `sign-agent [serve]`     | Run the agent in the foreground                                              |
+| `sign-agent version`     | Print the version                                                            |
+
+Opening the macOS app or double-clicking the Windows program installs it when needed, starts the agent and shows its
+page. The only link the agent acts on is `polinetwork-sign://open`, and it only starts the agent.
+
 ## Development
 
 ```sh
@@ -16,3 +156,25 @@ go test ./...
 ./scripts/test-softhsm.sh     # PKCS#11 tests on Linux with SoftHSM2, in Docker
 go run ./cmd/sign-agent --dev --soft   # development key, PIN 12345678
 ```
+
+cgo is required (PKCS#11, PC/SC). Builds:
+
+```sh
+./scripts/build-macos.sh v1.2.3    # on a Mac: universal .app, .zip, .dmg
+./scripts/build-docker.sh v1.2.3   # anywhere with Docker: Linux amd64/arm64 (.tar.gz, .deb), Windows (.zip)
+```
+
+Releases: push a `v*` tag; `.github/workflows/release.yml` builds everything, adds `SHA256SUMS.txt` and publishes the
+GitHub release (a pre-release for tags such as `v1.2.3-rc.1`).
+
+### Maintainer TODO before a public release
+
+- **macOS notarization.** The app is only signed ad hoc, so Gatekeeper blocks it until the user allows it. Sign with a
+  Developer ID Application certificate, with the hardened runtime and the
+  `com.apple.security.cs.disable-library-validation` entitlement (the agent loads the CIE middleware, which another team
+  signed), notarize with `xcrun notarytool submit --wait` and staple (`xcrun stapler staple`) both the app and the
+  `.dmg`. A stable signature also keeps macOS from asking again, after each update, for access to Software CIE's data.
+- **Windows code signing** (Authenticode) of `sign-agent.exe`, to avoid SmartScreen warnings; an icon and version
+  resource would help too.
+- **Test on real hardware**: Windows 10/11 x64 (and Windows on ARM, which runs the x64 build emulated), Intel and Apple
+  Silicon Macs with Software CIE, and the Linux distributions to support, each with a paired card.
