@@ -40,6 +40,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
@@ -99,7 +103,7 @@ h1 {
 
 .facts div {
   display: grid;
-  grid-template-columns: 88px 1fr;
+  grid-template-columns: 100px 1fr;
   gap: 8px;
 }
 
@@ -110,6 +114,71 @@ h1 {
 .facts dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.docs {
+  display: grid;
+  max-height: 34dvh;
+  margin: 0 0 18px;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  list-style: none;
+  text-align: left;
+  font-size: 14px;
+}
+
+#results {
+  max-height: 46dvh;
+}
+
+.docs li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+}
+
+.docs li + li {
+  border-top: 1px solid var(--line);
+}
+
+.docs li > div {
+  display: grid;
+  gap: 2px;
+}
+
+.docs .result {
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+}
+
+.docs .muted {
+  margin: 0;
+}
+
+.docs .failed strong {
+  color: var(--fg-muted);
+}
+
+.docs .ok,
+.mark.ok {
+  color: var(--success-fg);
+}
+
+.docs .bad,
+.mark.bad {
+  color: var(--danger-fg);
+}
+
+.mark {
+  font-weight: 700;
+}
+
+.docs:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .card-status {
@@ -198,6 +267,11 @@ button:focus-visible {
   margin-top: 20px;
 }
 
+.actions.center {
+  justify-content: center;
+  margin-top: 0;
+}
+
 button {
   height: 40px;
   padding: 0 18px;
@@ -256,6 +330,15 @@ button.secondary:hover {
   color: var(--success-fg);
   font-size: 22px;
   font-weight: 700;
+}
+
+.check.bad {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+
+h1:focus {
+  outline: none;
 }
 
 @keyframes spin {
