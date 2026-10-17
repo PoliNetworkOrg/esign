@@ -166,15 +166,15 @@ func pkcs11Spec(cfg config.Config, dir, name, override string, candidates []stri
 		spec.Archs = []string{runtime.GOARCH}
 	}
 	spec.Plan, spec.PlanErr = worker.Choose(runtime.GOOS, runtime.GOARCH, spec.Archs, selfArchs, cfg.Worker == config.WorkerAlways || needsEnv)
-	if assumed {
-		spec.Archs = nil
-	}
 	if spec.PlanErr == nil && cfg.Worker == config.WorkerNever && spec.Plan.Worker {
 		if spec.Plan.Arch != "" {
 			spec.PlanErr = fmt.Errorf("the module is %s only and the configuration disables workers", strings.Join(spec.Archs, "+"))
 		} else {
 			spec.Plan, spec.Home = worker.Plan{}, ""
 		}
+	}
+	if assumed {
+		spec.Archs = nil
 	}
 	switch {
 	case spec.PlanErr != nil:
