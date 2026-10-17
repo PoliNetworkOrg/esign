@@ -36,6 +36,9 @@ type Options struct {
 	PIN func(string) string
 	// PINLength the user's PIN must have; 0 accepts 4–16 digits.
 	PINLength int
+	// Pair lists the module's exported pairing functions, tried in order (see OfficialPairing, OpenCIEPairing).
+	// When set and the card turns out not to be paired, Open pairs it with the full PIN and opens again, once.
+	Pair []string
 }
 
 // LastFour is the official CIE middleware's login PIN: it keeps the first four digits from pairing.
@@ -167,44 +170,68 @@ func (p *Provider) Open(_ context.Context, pin string) (token.Session, error) {
 		return nil, token.Errorf(token.CodePinInvalid, "malformed PIN")
 	}
 	p.mu.Lock()
-	ctx, err := p.load()
+	s, err := p.open(pin)
+	var unpaired *unpairedError
+	if errors.As(err, &unpaired) {
+		s, err = p.pairAndOpen(pin, unpaired)
+	}
 	if err != nil {
 		p.mu.Unlock()
+		return nil, err
+	}
+	return s, nil
+}
+
+// unpairedError is a failure that a missing pairing explains: the official middleware fails C_OpenSession (its
+// session setup reads the certificate from the pairing cache), and OpenCIE likewise; a module could also show a
+// token without a certificate. No PIN has reached the card.
+type unpairedError struct {
+	err error // classified
+}
+
+func (e *unpairedError) Error() string { return e.err.Error() }
+func (e *unpairedError) Unwrap() error { return e.err }
+
+// open logs in and finds the key. Callers hold p.mu; it stays held when a session is returned.
+func (p *Provider) open(pin string) (*session11, error) {
+	ctx, err := p.load()
+	if err != nil {
 		return nil, err
 	}
 	slot, err := p.slot(ctx)
 	if err != nil {
-		p.mu.Unlock()
 		return nil, err
 	}
 	session, err := ctx.OpenSession(slot, pkcs11.CKF_SERIAL_SESSION)
 	if err != nil {
-		p.mu.Unlock()
+		if isCode(err, pkcs11.CKR_GENERAL_ERROR) || isCode(err, pkcs11.CKR_FUNCTION_FAILED) || isCode(err, pkcs11.CKR_TOKEN_NOT_RECOGNIZED) {
+			return nil, &unpairedError{err: classify(err)}
+		}
 		return nil, classify(err)
 	}
 	s := &session11{p: p, ctx: ctx, session: session}
-	fail := func(err error) (token.Session, error) {
-		_ = s.Close()
-		return nil, err
-	}
 	login := pin
 	if p.opts.PIN != nil {
 		login = p.opts.PIN(pin)
 	}
 	if err := ctx.Login(session, pkcs11.CKU_USER, login); err != nil && !isCode(err, pkcs11.CKR_USER_ALREADY_LOGGED_IN) {
-		return fail(pinError(err))
+		s.release()
+		return nil, pinError(err)
 	}
 	s.loggedIn = true
 	certs, err := certificates(ctx, session)
 	if err != nil {
-		return fail(err)
+		s.release()
+		return nil, err
 	}
 	if len(certs) == 0 {
-		return fail(token.Errorf(token.CodeNotFound, "no signing certificate on the card"))
+		s.release()
+		return nil, &unpairedError{err: token.Errorf(token.CodeNotFound, "no signing certificate on the card")}
 	}
 	s.cert = certs[0].cert
 	if s.key, err = privateKey(ctx, session, certs[0].id); err != nil {
-		return fail(err)
+		s.release()
+		return nil, err
 	}
 	return s, nil
 }
@@ -243,13 +270,18 @@ func (s *session11) Close() error {
 	if s.closed {
 		return nil
 	}
+	s.release()
+	s.p.mu.Unlock()
+	return nil
+}
+
+// release logs out and closes the PKCS#11 session, keeping p.mu.
+func (s *session11) release() {
 	s.closed = true
 	if s.loggedIn {
 		_ = s.ctx.Logout(s.session)
 	}
 	_ = s.ctx.CloseSession(s.session)
-	s.p.mu.Unlock()
-	return nil
 }
 
 type found struct {

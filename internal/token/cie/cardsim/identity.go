@@ -160,7 +160,8 @@ func tlv(tag uint32, parts ...[]byte) []byte {
 	return ias.EncodeTLV(tag, v)
 }
 
-// sod builds EF.SOD as the official pairing code parses it (CSP/IAS.cpp VerificaSOD): CMS SignedData over an ICAO
+// sod builds EF.SOD as the official pairing code parses it (CSP/IAS.cpp VerificaSOD): tag 77 around a CMS
+// ContentInfo with SignedData over an ICAO
 // LDS security object with SHA-256 hashes of the NIS (A1), serial (A2), certificate (A3), EF 1004 (A4), EF 1005 (A5)
 // and EF.DH (1B), signed with RSA PKCS#1 v1.5 SHA-256. Data group numbers are one-byte INTEGERs, which is what the
 // reference's ByteArrayToVar(content, BYTE) reads.
@@ -195,7 +196,8 @@ func sod(hashes map[byte][]byte, ds *x509.Certificate, key *rsa.PrivateKey) ([]b
 		tlv(0xA0, ds.Raw),
 		tlv(0x31, signerInfo),
 	)
-	return tlv(0x30, ias.EncodeTLV(0x06, oidSignedData), tlv(0xA0, signedData)), nil
+	// EF.SOD wraps the ContentInfo in the ICAO application tag 77.
+	return tlv(0x77, tlv(0x30, ias.EncodeTLV(0x06, oidSignedData), tlv(0xA0, signedData))), nil
 }
 
 func sum(b []byte) []byte {
