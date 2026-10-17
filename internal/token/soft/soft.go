@@ -90,16 +90,17 @@ func (p *Provider) Open(_ context.Context, pin string) (token.Session, error) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// From here on the PIN has reached the token.
 	if p.attempts >= maxAttempts {
-		return nil, token.Errorf(token.CodePinLocked, "PIN blocked after %d wrong attempts", maxAttempts)
+		return nil, token.AfterPIN(token.Errorf(token.CodePinLocked, "PIN blocked after %d wrong attempts", maxAttempts))
 	}
 	if pin != p.pin {
 		p.attempts++
 		left := maxAttempts - p.attempts
 		if left == 0 {
-			return nil, token.Errorf(token.CodePinLocked, "PIN blocked after %d wrong attempts", maxAttempts)
+			return nil, token.AfterPIN(token.Errorf(token.CodePinLocked, "PIN blocked after %d wrong attempts", maxAttempts))
 		}
-		return nil, &token.Error{Code: token.CodePinIncorrect, RetriesLeft: left, Err: errors.New("wrong PIN")}
+		return nil, &token.Error{Code: token.CodePinIncorrect, RetriesLeft: left, PINSent: true, Err: errors.New("wrong PIN")}
 	}
 	p.attempts = 0
 	return &session{p: p}, nil

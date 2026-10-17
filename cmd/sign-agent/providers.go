@@ -35,12 +35,16 @@ type providerSpec struct {
 	Provider token.Provider
 }
 
-// p11Options are the PKCS#11 settings of a provider, shared by the agent and its workers.
+// p11Options are the PKCS#11 settings of a provider, shared by the agent and its workers. Both CIE modules need a
+// one-time pairing with the full PIN: Open does it through the module's pairing export, in whichever process loads
+// the module.
 func p11Options(name, path string) p11.Options {
 	switch name {
 	case "cie-mw":
 		// The middleware caches the PIN's first four digits when the card is paired, and takes the last four.
-		return p11.Options{Name: name, Path: path, PIN: p11.LastFour, PINLength: 8}
+		return p11.Options{Name: name, Path: path, PIN: p11.LastFour, PINLength: 8, Pair: p11.OfficialPairing()}
+	case "opencie":
+		return p11.Options{Name: name, Path: path, PINLength: 8, Pair: p11.OpenCIEPairing()}
 	default:
 		return p11.Options{Name: name, Path: path, PINLength: 8}
 	}

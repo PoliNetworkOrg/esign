@@ -242,3 +242,38 @@ func TestBackendErrors(t *testing.T) {
 		t.Errorf("unreachable: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// pinSentNotPaired is a provider whose Open fails with a fallback code after the PIN already reached its card.
+type pinSentNotPaired struct{ opened int }
+
+func (p *pinSentNotPaired) Name() string { return "sent" }
+func (p *pinSentNotPaired) Status(context.Context) token.Status {
+	present := true
+	return token.Status{Provider: "sent", Available: true, CardPresent: &present}
+}
+func (p *pinSentNotPaired) Open(context.Context, string) (token.Session, error) {
+	p.opened++
+	return nil, token.AfterPIN(token.Errorf(token.CodeNotPaired, "pairing failed after VERIFY"))
+}
+
+// TestNoFallbackAfterPIN: once a provider sent the PIN, the next provider must not receive it, even when the error
+// code would otherwise allow falling back.
+func TestNoFallbackAfterPIN(t *testing.T) {
+	first := &pinSentNotPaired{}
+	next := &noCard{}
+	s := New(Options{Port: 47321, AllowedOrigins: []string{dashboard}, Providers: []token.Provider{first, next}, Version: "test"})
+	_, p, err := s.open(t.Context(), "12345678")
+	if first.opened != 1 || next.opened != 0 {
+		t.Fatalf("opened: first %d, next %d", first.opened, next.opened)
+	}
+	if p != first || token.CodeOf(err) != token.CodeNotPaired || !token.PINSent(err) {
+		t.Fatalf("got provider %v, error %v", p, err)
+	}
+
+	// Without the mark the same code still falls back.
+	s = New(Options{Port: 47321, AllowedOrigins: []string{dashboard}, Providers: []token.Provider{&noCard{}, next}, Version: "test"})
+	_, _, _ = s.open(t.Context(), "12345678")
+	if next.opened != 1 {
+		t.Fatalf("fallback without PINSent: next opened %d times", next.opened)
+	}
+}

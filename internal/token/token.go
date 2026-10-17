@@ -67,7 +67,10 @@ type Error struct {
 	Code Code
 	// RetriesLeft is set for CodePinIncorrect when the card reports it; -1 when unknown.
 	RetriesLeft int
-	Err         error
+	// PINSent is true when the failure happened at or after the moment the PIN reached the module or the card
+	// (C_Login, VERIFY, a pairing call): an attempt may have been used, so no other provider may be tried with it.
+	PINSent bool
+	Err     error
 }
 
 func (e *Error) Error() string {
@@ -82,6 +85,27 @@ func (e *Error) Unwrap() error { return e.Err }
 // Errorf builds a classified error.
 func Errorf(code Code, format string, args ...any) *Error {
 	return &Error{Code: code, RetriesLeft: -1, Err: fmt.Errorf(format, args...)}
+}
+
+// AfterPIN marks err as happening after the PIN was sent (see Error.PINSent), classifying it as CodeDevice when it
+// is not a token error yet. It returns nil for nil.
+func AfterPIN(err error) error {
+	if err == nil {
+		return nil
+	}
+	var e *Error
+	if errors.As(err, &e) {
+		c := *e
+		c.PINSent = true
+		return &c
+	}
+	return &Error{Code: CodeDevice, RetriesLeft: -1, PINSent: true, Err: err}
+}
+
+// PINSent reports whether err happened after the PIN reached a module or card.
+func PINSent(err error) bool {
+	var e *Error
+	return errors.As(err, &e) && e.PINSent
 }
 
 // CodeOf returns the code of err, or CodeDevice for unclassified errors.
