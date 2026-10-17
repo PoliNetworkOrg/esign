@@ -1,5 +1,5 @@
-// Package p11 signs through a PKCS#11 module: the official CIE middleware ("CIE ID"), or any other module such as
-// SoftHSM2 in tests.
+// Package p11 signs through a PKCS#11 module: the official CIE middleware ("CIE ID" / "Software CIE"), OpenCIE, or
+// any other module such as SoftHSM2 in tests.
 package p11
 
 import (
@@ -17,10 +17,8 @@ import (
 
 // Provider is a PKCS#11 module.
 type Provider struct {
-	name   string
-	label  string
-	path   string
-	pinLen int
+	opts Options
+	path string
 
 	mu  sync.Mutex
 	ctx *pkcs11.Ctx
@@ -28,24 +26,30 @@ type Provider struct {
 
 // Options configures a provider.
 type Options struct {
-	// Name in certificate IDs; "pkcs11" by default.
+	// Name of the provider; "pkcs11" by default.
 	Name string
-	// Label shown for its certificates, e.g. "CIE (middleware)".
-	Label string
 	// Path of the module; the first existing entry of Candidates when empty.
 	Path       string
 	Candidates []string
-	// PINLength the PIN must have; 0 accepts 4–16 digits.
+	// PIN turns the PIN the user typed into what C_Login expects, e.g. the last four digits for the official CIE
+	// middleware after pairing. Nil passes it unchanged.
+	PIN func(string) string
+	// PINLength the user's PIN must have; 0 accepts 4–16 digits.
 	PINLength int
+}
+
+// LastFour is the official CIE middleware's login PIN: it keeps the first four digits from pairing.
+func LastFour(pin string) string {
+	if len(pin) == 8 {
+		return pin[4:]
+	}
+	return pin
 }
 
 // New returns a provider. It does not load the module until first use.
 func New(opts Options) *Provider {
 	if opts.Name == "" {
 		opts.Name = "pkcs11"
-	}
-	if opts.Label == "" {
-		opts.Label = "PKCS#11 token"
 	}
 	path := opts.Path
 	if path == "" {
@@ -56,10 +60,10 @@ func New(opts Options) *Provider {
 			}
 		}
 	}
-	return &Provider{name: opts.Name, label: opts.Label, path: path, pinLen: opts.PINLength}
+	return &Provider{opts: opts, path: path}
 }
 
-func (p *Provider) Name() string { return p.name }
+func (p *Provider) Name() string { return p.opts.Name }
 
 // Path is the module in use, or "" when none was found.
 func (p *Provider) Path() string { return p.path }
@@ -104,7 +108,7 @@ func (p *Provider) Close() {
 func (p *Provider) Status(context.Context) token.Status {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	st := token.Status{Provider: p.name}
+	st := token.Status{Provider: p.opts.Name}
 	ctx, err := p.load()
 	if err != nil {
 		st.Detail = err.Error()
@@ -131,57 +135,129 @@ func (p *Provider) Status(context.Context) token.Status {
 	return st
 }
 
-type found struct {
-	slot uint
-	id   []byte
-	cert *x509.Certificate
-}
-
-// scan lists the certificates on every token. Callers hold p.mu.
-func (p *Provider) scan() ([]found, error) {
-	ctx, err := p.load()
-	if err != nil {
-		return nil, err
-	}
+// slot returns the single slot holding an initialized token.
+func (p *Provider) slot(ctx *pkcs11.Ctx) (uint, error) {
 	slots, err := ctx.GetSlotList(true)
 	if err != nil {
 		p.reset()
-		return nil, classify(err)
+		return 0, classify(err)
 	}
-	if len(slots) == 0 {
-		all, _ := ctx.GetSlotList(false)
-		if len(all) == 0 {
-			return nil, token.Errorf(token.CodeNoReader, "no reader")
-		}
-		return nil, token.Errorf(token.CodeNoCard, "no card")
-	}
-	var out []found
-	var firstErr error
+	var usable []uint
 	for _, slot := range slots {
 		if info, err := ctx.GetTokenInfo(slot); err == nil && info.Flags&pkcs11.CKF_TOKEN_INITIALIZED == 0 {
 			continue
 		}
-		certs, err := p.slotCertificates(ctx, slot)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
+		usable = append(usable, slot)
+	}
+	switch len(usable) {
+	case 0:
+		if all, _ := ctx.GetSlotList(false); len(all) == 0 {
+			return 0, token.Errorf(token.CodeNoReader, "no reader")
 		}
-		out = append(out, certs...)
+		return 0, token.Errorf(token.CodeNoCard, "no card")
+	case 1:
+		return usable[0], nil
+	default:
+		return 0, token.Errorf(token.CodeDevice, "%d cards are present; keep only one on the readers", len(usable))
 	}
-	if len(out) == 0 && firstErr != nil {
-		return nil, firstErr
-	}
-	return out, nil
 }
 
-func (p *Provider) slotCertificates(ctx *pkcs11.Ctx, slot uint) ([]found, error) {
+func (p *Provider) Open(_ context.Context, pin string) (token.Session, error) {
+	if !token.ValidPIN(pin, p.opts.PINLength) {
+		return nil, token.Errorf(token.CodePinInvalid, "malformed PIN")
+	}
+	p.mu.Lock()
+	ctx, err := p.load()
+	if err != nil {
+		p.mu.Unlock()
+		return nil, err
+	}
+	slot, err := p.slot(ctx)
+	if err != nil {
+		p.mu.Unlock()
+		return nil, err
+	}
 	session, err := ctx.OpenSession(slot, pkcs11.CKF_SERIAL_SESSION)
 	if err != nil {
+		p.mu.Unlock()
 		return nil, classify(err)
 	}
-	defer ctx.CloseSession(session)
+	s := &session11{p: p, ctx: ctx, session: session}
+	fail := func(err error) (token.Session, error) {
+		_ = s.Close()
+		return nil, err
+	}
+	login := pin
+	if p.opts.PIN != nil {
+		login = p.opts.PIN(pin)
+	}
+	if err := ctx.Login(session, pkcs11.CKU_USER, login); err != nil && !isCode(err, pkcs11.CKR_USER_ALREADY_LOGGED_IN) {
+		return fail(pinError(err))
+	}
+	s.loggedIn = true
+	certs, err := certificates(ctx, session)
+	if err != nil {
+		return fail(err)
+	}
+	if len(certs) == 0 {
+		return fail(token.Errorf(token.CodeNotFound, "no signing certificate on the card"))
+	}
+	s.cert = certs[0].cert
+	if s.key, err = privateKey(ctx, session, certs[0].id); err != nil {
+		return fail(err)
+	}
+	return s, nil
+}
+
+// session11 holds p.mu from Open until Close: the module and the card serve one operation at a time.
+type session11 struct {
+	p        *Provider
+	ctx      *pkcs11.Ctx
+	session  pkcs11.SessionHandle
+	loggedIn bool
+	cert     *x509.Certificate
+	key      pkcs11.ObjectHandle
+	closed   bool
+}
+
+func (s *session11) Certificate() *x509.Certificate { return s.cert }
+func (s *session11) Chain() []*x509.Certificate     { return nil }
+
+func (s *session11) SignDigest(_ context.Context, digest []byte) ([]byte, error) {
+	input, err := token.DigestInfoSHA256(digest)
+	if err != nil {
+		return nil, token.Errorf(token.CodeDevice, "%v", err)
+	}
+	if err := s.ctx.SignInit(s.session, []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_RSA_PKCS, nil)}, s.key); err != nil {
+		return nil, classify(err)
+	}
+	sig, err := s.ctx.Sign(s.session, input)
+	if err != nil {
+		// The official middleware re-verifies the PIN while signing and reports any failure as CKR_PIN_INCORRECT.
+		return nil, pinError(err)
+	}
+	return sig, nil
+}
+
+func (s *session11) Close() error {
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	if s.loggedIn {
+		_ = s.ctx.Logout(s.session)
+	}
+	_ = s.ctx.CloseSession(s.session)
+	s.p.mu.Unlock()
+	return nil
+}
+
+type found struct {
+	id   []byte
+	cert *x509.Certificate
+}
+
+func certificates(ctx *pkcs11.Ctx, session pkcs11.SessionHandle) ([]found, error) {
 	objects, err := findAll(ctx, session, []*pkcs11.Attribute{
 		pkcs11.NewAttribute(pkcs11.CKA_CLASS, pkcs11.CKO_CERTIFICATE),
 		pkcs11.NewAttribute(pkcs11.CKA_CERTIFICATE_TYPE, pkcs11.CKC_X_509),
@@ -202,73 +278,9 @@ func (p *Provider) slotCertificates(ctx *pkcs11.Ctx, slot uint) ([]found, error)
 		if err != nil || cert.IsCA {
 			continue
 		}
-		out = append(out, found{slot: slot, id: attrs[1].Value, cert: cert})
+		out = append(out, found{id: attrs[1].Value, cert: cert})
 	}
 	return out, nil
-}
-
-func (p *Provider) Certificates(context.Context) ([]token.Certificate, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	certs, err := p.scan()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]token.Certificate, 0, len(certs))
-	for _, c := range certs {
-		out = append(out, token.Certificate{ID: token.CertificateID(p.name, c.cert), Provider: p.name, Label: p.label, Cert: c.cert})
-	}
-	return out, nil
-}
-
-func (p *Provider) SignDigest(_ context.Context, certID string, digest []byte, pin string) ([]byte, error) {
-	if !token.ValidPIN(pin, p.pinLen) {
-		return nil, token.Errorf(token.CodePinInvalid, "malformed PIN")
-	}
-	input, err := token.DigestInfoSHA256(digest)
-	if err != nil {
-		return nil, token.Errorf(token.CodeDevice, "%v", err)
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	certs, err := p.scan()
-	if err != nil {
-		return nil, err
-	}
-	var target *found
-	for i := range certs {
-		if token.CertificateID(p.name, certs[i].cert) == certID {
-			target = &certs[i]
-			break
-		}
-	}
-	if target == nil {
-		return nil, token.Errorf(token.CodeNotFound, "certificate %s is not on any card", certID)
-	}
-	ctx := p.ctx
-	session, err := ctx.OpenSession(target.slot, pkcs11.CKF_SERIAL_SESSION)
-	if err != nil {
-		return nil, classify(err)
-	}
-	defer ctx.CloseSession(session)
-
-	if err := ctx.Login(session, pkcs11.CKU_USER, pin); err != nil && !isCode(err, pkcs11.CKR_USER_ALREADY_LOGGED_IN) {
-		return nil, p.pinError(ctx, target.slot, err)
-	}
-	defer ctx.Logout(session)
-
-	key, err := privateKey(ctx, session, target.id)
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.SignInit(session, []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_RSA_PKCS, nil)}, key); err != nil {
-		return nil, classify(err)
-	}
-	sig, err := ctx.Sign(session, input)
-	if err != nil {
-		return nil, classify(err)
-	}
-	return sig, nil
 }
 
 // privateKey finds the private key paired with the certificate's CKA_ID, or the only private key on the token.
@@ -307,22 +319,11 @@ func findAll(ctx *pkcs11.Ctx, session pkcs11.SessionHandle, template []*pkcs11.A
 	}
 }
 
-// pinError classifies a failed login, reading the token flags for the remaining attempts.
-func (p *Provider) pinError(ctx *pkcs11.Ctx, slot uint, err error) error {
+// pinError classifies a failed login. The CIE middleware's token flags are static, so remaining attempts are unknown.
+func pinError(err error) error {
 	switch {
 	case isCode(err, pkcs11.CKR_PIN_INCORRECT):
-		left := -1
-		if info, e := ctx.GetTokenInfo(slot); e == nil {
-			switch {
-			case info.Flags&pkcs11.CKF_USER_PIN_LOCKED != 0:
-				return token.Errorf(token.CodePinLocked, "PIN locked")
-			case info.Flags&pkcs11.CKF_USER_PIN_FINAL_TRY != 0:
-				left = 1
-			case info.Flags&pkcs11.CKF_USER_PIN_COUNT_LOW != 0:
-				left = 2
-			}
-		}
-		return &token.Error{Code: token.CodePinIncorrect, RetriesLeft: left, Err: err}
+		return &token.Error{Code: token.CodePinIncorrect, RetriesLeft: -1, Err: err}
 	case isCode(err, pkcs11.CKR_PIN_LOCKED):
 		return token.Errorf(token.CodePinLocked, "%v", err)
 	case isCode(err, pkcs11.CKR_PIN_LEN_RANGE), isCode(err, pkcs11.CKR_PIN_INVALID):
@@ -336,7 +337,7 @@ func classify(err error) error {
 	case isCode(err, pkcs11.CKR_TOKEN_NOT_PRESENT), isCode(err, pkcs11.CKR_DEVICE_REMOVED), isCode(err, pkcs11.CKR_SESSION_HANDLE_INVALID), isCode(err, pkcs11.CKR_SESSION_CLOSED):
 		return token.Errorf(token.CodeCardRemoved, "%v", err)
 	case isCode(err, pkcs11.CKR_TOKEN_NOT_RECOGNIZED):
-		return token.Errorf(token.CodeCardUnsupported, "%v", err)
+		return token.Errorf(token.CodeNotPaired, "%v", err)
 	case isCode(err, pkcs11.CKR_PIN_LOCKED):
 		return token.Errorf(token.CodePinLocked, "%v", err)
 	}
@@ -349,4 +350,3 @@ func isCode(err error, code uint) bool {
 }
 
 func trim(s string) string { return string(bytes.TrimRight([]byte(s), " \x00")) }
-

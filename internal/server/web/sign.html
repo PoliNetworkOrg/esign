@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Sign with CIE · PoliNetwork</title>
+    <link rel="icon" href="/assets/logo.png" />
+    <link rel="stylesheet" href="/assets/style.css" />
+    <script src="/assets/sign.js" defer></script>
+  </head>
+  <body>
+    <header class="bar">
+      <img src="/assets/logo.png" alt="" width="28" height="28" />
+      <span><strong>PoliNetwork</strong> Sign Agent</span>
+    </header>
+
+    <main>
+      <section id="loading" class="panel">
+        <p class="muted">Loading the document…</p>
+      </section>
+
+      <section id="fatal" class="panel" hidden>
+        <h1>Cannot sign</h1>
+        <p id="fatal-message" class="muted"></p>
+        <p class="muted">Close this window and start again from the dashboard.</p>
+        <button type="button" class="secondary" data-close>Close</button>
+      </section>
+
+      <form id="form" class="panel" hidden autocomplete="off">
+        <h1 id="doc-title"></h1>
+        <dl class="facts">
+          <div><dt>File</dt><dd id="doc-file"></dd></div>
+          <div><dt>Signature</dt><dd id="doc-place"></dd></div>
+          <div><dt>Signing as</dt><dd id="doc-signer"></dd></div>
+        </dl>
+
+        <div id="card" class="card-status" data-state="unknown" role="status" aria-live="polite">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="card-text">Looking for the card reader…</span>
+        </div>
+
+        <label for="pin">CIE PIN</label>
+        <input
+          id="pin"
+          name="pin"
+          type="password"
+          inputmode="numeric"
+          pattern="[0-9]{8}"
+          maxlength="8"
+          minlength="8"
+          required
+          autocomplete="off"
+          spellcheck="false"
+          aria-describedby="pin-hint"
+        />
+        <p id="pin-hint" class="hint">The 8 digits of your CIE PIN. It stays on this computer.</p>
+
+        <p id="error" class="error" role="alert" hidden></p>
+
+        <div class="actions">
+          <button type="button" class="secondary" id="cancel">Cancel</button>
+          <button type="submit" id="submit">Sign</button>
+        </div>
+      </form>
+
+      <section id="working" class="panel" hidden aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <h1>Signing…</h1>
+        <p class="muted">Keep the CIE still on the reader until this finishes.</p>
+      </section>
+
+      <section id="done" class="panel" hidden aria-live="polite">
+        <div class="check" aria-hidden="true">✓</div>
+        <h1>Signed</h1>
+        <p id="done-message" class="muted"></p>
+        <button type="button" class="secondary" data-close>Close</button>
+      </section>
+    </main>
+  </body>
+</html>

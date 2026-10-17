@@ -23,9 +23,11 @@ type Config struct {
 	Port int `json:"port,omitempty"`
 	// AllowedOrigins replaces DefaultOrigins when set.
 	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
-	// PKCS11Module overrides the discovered CIE middleware module.
+	// PKCS11Module overrides the discovered official CIE middleware module.
 	PKCS11Module string `json:"pkcs11Module,omitempty"`
-	// Providers enables providers in order of preference: "cie" (direct PC/SC), "pkcs11" (CIE middleware), "soft".
+	// OpenCIEModule overrides the discovered OpenCIE module.
+	OpenCIEModule string `json:"openCieModule,omitempty"`
+	// Providers in order of preference: "cie-mw" (official middleware), "opencie", "cie" (built-in PC/SC), "soft".
 	Providers []string `json:"providers,omitempty"`
 }
 
@@ -58,7 +60,7 @@ func Load(path string) (Config, error) {
 		c.AllowedOrigins = append([]string{}, DefaultOrigins...)
 	}
 	if len(c.Providers) == 0 {
-		c.Providers = []string{"cie", "pkcs11"}
+		c.Providers = []string{"cie-mw", "opencie", "cie"}
 	}
 	return c, nil
 }

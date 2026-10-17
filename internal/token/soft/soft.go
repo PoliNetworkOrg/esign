@@ -77,25 +77,14 @@ func New(pin string) (*Provider, error) {
 func (p *Provider) Name() string { return "soft" }
 
 func (p *Provider) Status(context.Context) token.Status {
-	return token.Status{Provider: p.Name(), Available: true, Detail: "Software development token (not a CIE)"}
+	present := true
+	return token.Status{Provider: p.Name(), Available: true, CardPresent: &present, Detail: "Software development key (not a CIE)"}
 }
 
-func (p *Provider) Certificates(context.Context) ([]token.Certificate, error) {
-	return []token.Certificate{{
-		ID:       token.CertificateID(p.Name(), p.cert),
-		Provider: p.Name(),
-		Label:    "Development certificate",
-		Cert:     p.cert,
-	}}, nil
-}
+// Certificate is the token's certificate, for tests.
+func (p *Provider) Certificate() *x509.Certificate { return p.cert }
 
-// Chain returns the issuing CA certificate.
-func (p *Provider) Chain() []*x509.Certificate { return p.chain }
-
-func (p *Provider) SignDigest(_ context.Context, certID string, digest []byte, pin string) ([]byte, error) {
-	if certID != token.CertificateID(p.Name(), p.cert) {
-		return nil, token.Errorf(token.CodeNotFound, "unknown certificate %q", certID)
-	}
+func (p *Provider) Open(_ context.Context, pin string) (token.Session, error) {
 	if !token.ValidPIN(pin, 8) {
 		return nil, token.Errorf(token.CodePinInvalid, "the PIN must be 8 digits")
 	}
@@ -113,10 +102,20 @@ func (p *Provider) SignDigest(_ context.Context, certID string, digest []byte, p
 		return nil, &token.Error{Code: token.CodePinIncorrect, RetriesLeft: left, Err: errors.New("wrong PIN")}
 	}
 	p.attempts = 0
+	return &session{p: p}, nil
+}
+
+type session struct{ p *Provider }
+
+func (s *session) Certificate() *x509.Certificate { return s.p.cert }
+func (s *session) Chain() []*x509.Certificate     { return s.p.chain }
+func (s *session) Close() error                   { return nil }
+
+func (s *session) SignDigest(_ context.Context, digest []byte) ([]byte, error) {
 	if len(digest) != crypto.SHA256.Size() {
 		return nil, token.Errorf(token.CodeDevice, "digest must be %d bytes", crypto.SHA256.Size())
 	}
-	return rsa.SignPKCS1v15(rand.Reader, p.key, crypto.SHA256, digest)
+	return rsa.SignPKCS1v15(rand.Reader, s.p.key, crypto.SHA256, digest)
 }
 
 var oidSerialNumber = asn1.ObjectIdentifier{2, 5, 4, 5}

@@ -6,31 +6,30 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/hex"
 	"errors"
 	"fmt"
 )
 
-// Certificate is a signing certificate a provider can use.
-type Certificate struct {
-	// ID is stable for the same certificate on the same provider: "<provider>:<sha256 of the DER, hex>".
-	ID       string
-	Provider string
-	// Label describes the token for people, e.g. "CIE (middleware)".
-	Label string
-	Cert  *x509.Certificate
-}
-
-// Provider is one source of signing keys.
+// Provider is one way to reach a signing key: a PKCS#11 module, the card over PC/SC, or a software key.
 type Provider interface {
-	// Name identifies the provider in certificate IDs and status ("pkcs11", "cie", "soft").
+	// Name identifies the provider ("cie-mw", "opencie", "cie", "soft").
 	Name() string
 	// Status reports whether the provider can be used right now, without touching the PIN.
 	Status(ctx context.Context) Status
-	// Certificates lists the signing certificates currently available. It never needs the PIN.
-	Certificates(ctx context.Context) ([]Certificate, error)
-	// SignDigest returns the RSA PKCS#1 v1.5 signature of a SHA-256 digest with the key of the certificate.
-	SignDigest(ctx context.Context, certID string, digest []byte, pin string) ([]byte, error)
+	// Open authenticates to the card with the PIN, as the user typed it (8 digits for a CIE), and returns a session
+	// holding the signing certificate. Callers must Close it.
+	Open(ctx context.Context, pin string) (Session, error)
+}
+
+// Session is an authenticated card session.
+type Session interface {
+	// Certificate is the signer's certificate.
+	Certificate() *x509.Certificate
+	// Chain is the issuing certificates the device knows, possibly none.
+	Chain() []*x509.Certificate
+	// SignDigest returns the RSA PKCS#1 v1.5 signature of a SHA-256 digest.
+	SignDigest(ctx context.Context, digest []byte) ([]byte, error)
+	Close() error
 }
 
 // Status is a provider's availability.
@@ -45,12 +44,6 @@ type Status struct {
 	CardPresent *bool `json:"cardPresent,omitempty"`
 }
 
-// CertificateID is the stable ID of cert on provider.
-func CertificateID(provider string, cert *x509.Certificate) string {
-	sum := sha256.Sum256(cert.Raw)
-	return provider + ":" + hex.EncodeToString(sum[:])
-}
-
 // Code classifies errors so the dashboard can explain them.
 type Code string
 
@@ -59,6 +52,7 @@ const (
 	CodeNoCard            Code = "no_card"
 	CodeCardUnsupported   Code = "card_unsupported"
 	CodeMiddlewareMissing Code = "middleware_missing"
+	CodeNotPaired         Code = "not_paired"
 	CodeNotFound          Code = "certificate_not_found"
 	CodePinIncorrect      Code = "pin_incorrect"
 	CodePinLocked         Code = "pin_locked"

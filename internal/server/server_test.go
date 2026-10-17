@@ -2,60 +2,134 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/PoliNetworkOrg/sign-agent/internal/backend"
 	"github.com/PoliNetworkOrg/sign-agent/internal/token"
 	"github.com/PoliNetworkOrg/sign-agent/internal/token/soft"
 )
 
-const origin = "https://admin.polinetwork.org"
+const (
+	dashboard = "https://admin.polinetwork.org"
+	host      = "127.0.0.1:47321"
+	self      = "http://" + host
+	ticket    = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+)
 
-func newTestServer(t *testing.T) (*Server, *soft.Provider) {
+type fakeBackend struct {
+	digest    []byte
+	cert      []byte
+	signature []byte
+	failed    []string
+	jobErr    error
+}
+
+func (f *fakeBackend) Job(context.Context, string) (*backend.Job, error) {
+	if f.jobErr != nil {
+		return nil, f.jobErr
+	}
+	job := &backend.Job{ID: "j1", Status: "pending"}
+	job.Document.Title = "Verbale"
+	return job, nil
+}
+
+func (f *fakeBackend) Prepare(_ context.Context, _ string, cert []byte, _ [][]byte) ([]byte, error) {
+	f.cert = cert
+	sum := sha256.Sum256([]byte("signed attributes"))
+	f.digest = sum[:]
+	return f.digest, nil
+}
+
+func (f *fakeBackend) Complete(_ context.Context, _ string, sig []byte) (*backend.Completion, error) {
+	f.signature = sig
+	c := &backend.Completion{Status: "completed"}
+	c.Request.Status = "in_progress"
+	c.Request.Remaining = 1
+	return c, nil
+}
+
+func (f *fakeBackend) Fail(_ context.Context, _ string, code, _ string) error {
+	f.failed = append(f.failed, code)
+	return nil
+}
+
+// noCard is a provider that never sees a card, to check fallback.
+type noCard struct{ opened int }
+
+func (n *noCard) Name() string { return "none" }
+func (n *noCard) Status(context.Context) token.Status {
+	return token.Status{Provider: "none", Available: true}
+}
+func (n *noCard) Open(context.Context, string) (token.Session, error) {
+	n.opened++
+	return nil, token.Errorf(token.CodeNotPaired, "not paired")
+}
+
+func setup(t *testing.T) (*Server, *fakeBackend, *noCard) {
 	t.Helper()
 	p, err := soft.New("12345678")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(Options{Port: 47321, AllowedOrigins: []string{origin, "http://localhost:*"}, Providers: []token.Provider{p}, Version: "test"}), p
+	fb := &fakeBackend{}
+	nc := &noCard{}
+	s := New(Options{
+		Port:           47321,
+		AllowedOrigins: []string{dashboard},
+		Providers:      []token.Provider{nc, p},
+		Version:        "test",
+		Backend:        func(string) Backend { return fb },
+	})
+	return s, fb, nc
 }
 
-func do(t *testing.T, s *Server, method, path, host, org string, body any, headers map[string]string) *httptest.ResponseRecorder {
+type req struct {
+	method, path, host, origin, site string
+	body                             any
+	noHeader                         bool
+}
+
+func do(t *testing.T, s *Server, r req) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
-	if body != nil {
-		_ = json.NewEncoder(&buf).Encode(body)
+	if r.body != nil {
+		_ = json.NewEncoder(&buf).Encode(r.body)
 	}
-	req := httptest.NewRequest(method, path, &buf)
-	req.Host = host
-	if org != "" {
-		req.Header.Set("Origin", org)
+	h := httptest.NewRequest(r.method, r.path, &buf)
+	h.Host = r.host
+	if r.host == "" {
+		h.Host = host
 	}
-	if method != http.MethodOptions {
-		req.Header.Set(APIHeader, "1")
+	if r.origin != "" {
+		h.Header.Set("Origin", r.origin)
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if r.site != "" {
+		h.Header.Set("Sec-Fetch-Site", r.site)
 	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
+	if !r.noHeader {
+		h.Header.Set(APIHeader, "1")
+	}
+	if r.body != nil {
+		h.Header.Set("Content-Type", "application/json")
 	}
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.Handler().ServeHTTP(rec, h)
 	return rec
 }
 
 func TestOriginAllowed(t *testing.T) {
-	allowed := []string{origin, "http://localhost:*"}
+	allowed := []string{dashboard, "http://localhost:*"}
 	cases := map[string]bool{
-		origin:                               true,
+		dashboard:                            true,
 		"https://admin.polinetwork.org.evil": false,
 		"http://admin.polinetwork.org":       false,
 		"http://localhost:10001":             true,
@@ -74,102 +148,97 @@ func TestOriginAllowed(t *testing.T) {
 }
 
 func TestGuards(t *testing.T) {
-	s, _ := newTestServer(t)
-	if rec := do(t, s, "GET", "/v1/status", "evil.example:47321", origin, nil, nil); rec.Code != http.StatusMisdirectedRequest {
-		t.Errorf("rebinding host: got %d", rec.Code)
+	s, _, _ := setup(t)
+	body := jobRequest{Ticket: ticket, Origin: dashboard}
+	cases := []struct {
+		name string
+		r    req
+		want int
+	}{
+		{"rebinding host", req{method: "GET", path: "/sign", host: "evil.example:47321"}, http.StatusMisdirectedRequest},
+		{"wrong port", req{method: "GET", path: "/sign", host: "127.0.0.1:1"}, http.StatusMisdirectedRequest},
+		{"cross-site api", req{method: "POST", path: "/api/job", origin: "https://evil.example", site: "cross-site", body: body}, http.StatusForbidden},
+		{"cross-origin api", req{method: "POST", path: "/api/job", origin: "https://evil.example", body: body}, http.StatusForbidden},
+		{"no api header", req{method: "POST", path: "/api/job", origin: self, body: body, noHeader: true}, http.StatusBadRequest},
+		{"foreign dashboard", req{method: "POST", path: "/api/job", origin: self, body: jobRequest{Ticket: ticket, Origin: "https://evil.example"}}, http.StatusForbidden},
+		{"bad ticket", req{method: "POST", path: "/api/job", origin: self, body: jobRequest{Ticket: "x", Origin: dashboard}}, http.StatusBadRequest},
+		{"job", req{method: "POST", path: "/api/job", origin: self, site: "same-origin", body: body}, http.StatusOK},
+		{"page", req{method: "GET", path: "/sign?ticket=x"}, http.StatusOK},
+		{"asset", req{method: "GET", path: "/assets/sign.js"}, http.StatusOK},
+		{"status", req{method: "GET", path: "/api/status", site: "same-origin"}, http.StatusOK},
 	}
-	if rec := do(t, s, "GET", "/v1/status", "127.0.0.1:47322", origin, nil, nil); rec.Code != http.StatusMisdirectedRequest {
-		t.Errorf("wrong port: got %d", rec.Code)
+	for _, c := range cases {
+		if rec := do(t, s, c.r); rec.Code != c.want {
+			t.Errorf("%s: got %d want %d (%s)", c.name, rec.Code, c.want, rec.Body)
+		}
 	}
-	if rec := do(t, s, "GET", "/v1/status", "127.0.0.1:47321", "https://evil.example", nil, nil); rec.Code != http.StatusForbidden {
-		t.Errorf("foreign origin: got %d", rec.Code)
-	}
-	if rec := do(t, s, "GET", "/v1/status", "127.0.0.1:47321", "", nil, nil); rec.Code != http.StatusForbidden {
-		t.Errorf("no origin: got %d", rec.Code)
-	}
-	if rec := do(t, s, "GET", "/v1/status", "127.0.0.1:47321", origin, nil, map[string]string{APIHeader: "0"}); rec.Code != http.StatusBadRequest {
-		t.Errorf("missing header: got %d", rec.Code)
-	}
-	rec := do(t, s, "OPTIONS", "/v1/sign", "localhost:47321", origin, nil, map[string]string{"Access-Control-Request-Private-Network": "true"})
-	if rec.Code != http.StatusNoContent || rec.Header().Get("Access-Control-Allow-Private-Network") != "true" || rec.Header().Get("Access-Control-Allow-Origin") != origin {
-		t.Errorf("preflight: %d %v", rec.Code, rec.Header())
-	}
-	if rec := do(t, s, "GET", "/", "127.0.0.1:47321", "", nil, nil); rec.Code != http.StatusOK {
-		t.Errorf("home: got %d", rec.Code)
+	rec := do(t, s, req{method: "GET", path: "/sign"})
+	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") || rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Errorf("page headers: %v", rec.Header())
 	}
 }
 
-func TestSignFlow(t *testing.T) {
-	s, _ := newTestServer(t)
-	host := "127.0.0.1:47321"
-
-	rec := do(t, s, "GET", "/v1/certificates", host, origin, nil, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("certificates: %d %s", rec.Code, rec.Body)
-	}
-	var certs struct {
-		Certificates []certificateJSON `json:"certificates"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &certs); err != nil || len(certs.Certificates) != 1 {
-		t.Fatalf("certificates body: %v %s", err, rec.Body)
-	}
-	c := certs.Certificates[0]
-	if c.Subject.FiscalCode != "SVLPRV80A01F205X" || c.Subject.DisplayName != "Prova Sviluppo" {
-		t.Errorf("subject: %+v", c.Subject)
-	}
-	der, _ := base64.StdEncoding.DecodeString(c.Certificate)
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	digest := sha256.Sum256([]byte("signed attributes"))
-	b64 := base64.StdEncoding.EncodeToString(digest[:])
-
-	rec = do(t, s, "POST", "/v1/sign", host, origin, signRequest{CertificateID: c.ID, Digest: b64, PIN: "00000000"}, nil)
-	var wrong struct {
+func TestSign(t *testing.T) {
+	s, fb, nc := setup(t)
+	rec := do(t, s, req{method: "POST", path: "/api/sign", origin: self, body: jobRequest{Ticket: ticket, Origin: dashboard, PIN: "00000000"}})
+	var failure struct {
 		Error struct {
 			Code        string `json:"code"`
 			RetriesLeft int    `json:"retriesLeft"`
 		} `json:"error"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &wrong)
-	if rec.Code != http.StatusUnauthorized || wrong.Error.Code != "pin_incorrect" || wrong.Error.RetriesLeft != 2 {
-		t.Fatalf("wrong pin: %d %s", rec.Code, rec.Body)
+	_ = json.Unmarshal(rec.Body.Bytes(), &failure)
+	if rec.Code != http.StatusUnauthorized || failure.Error.Code != "pin_incorrect" || failure.Error.RetriesLeft != 2 {
+		t.Fatalf("wrong PIN: %d %s", rec.Code, rec.Body)
+	}
+	if nc.opened != 1 {
+		t.Errorf("fallback provider opened %d times", nc.opened)
+	}
+	if len(fb.failed) != 1 || fb.failed[0] != "pin_incorrect" {
+		t.Errorf("failure not reported: %v", fb.failed)
 	}
 
-	rec = do(t, s, "POST", "/v1/sign", host, origin, signRequest{CertificateID: c.ID, Digest: b64, PIN: "12345678"}, nil)
+	rec = do(t, s, req{method: "POST", path: "/api/sign", origin: self, body: jobRequest{Ticket: ticket, Origin: dashboard, PIN: "12345678"}})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("sign: %d %s", rec.Code, rec.Body)
 	}
-	var signed struct {
-		Signature string `json:"signature"`
+	var done struct {
+		Status  string `json:"status"`
+		Request struct {
+			Remaining int `json:"remaining"`
+		} `json:"request"`
+		Signer struct {
+			DisplayName string `json:"displayName"`
+		} `json:"signer"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &signed)
-	sig, _ := base64.StdEncoding.DecodeString(signed.Signature)
-	if err := rsa.VerifyPKCS1v15(cert.PublicKey.(*rsa.PublicKey), crypto.SHA256, digest[:], sig); err != nil {
-		t.Fatalf("signature does not verify: %v", err)
+	_ = json.Unmarshal(rec.Body.Bytes(), &done)
+	if done.Status != "completed" || done.Request.Remaining != 1 || done.Signer.DisplayName != "Prova Sviluppo" {
+		t.Errorf("result: %s", rec.Body)
+	}
+	p := s.opts.Providers[1].(*soft.Provider)
+	if !bytes.Equal(fb.cert, p.Certificate().Raw) {
+		t.Error("prepare did not receive the certificate")
+	}
+	if err := rsa.VerifyPKCS1v15(p.Certificate().PublicKey.(*rsa.PublicKey), crypto.SHA256, fb.digest, fb.signature); err != nil {
+		t.Errorf("signature: %v", err)
 	}
 
-	rec = do(t, s, "POST", "/v1/sign", host, origin, signRequest{CertificateID: c.ID, Digest: "AAAA", PIN: "12345678"}, nil)
+	rec = do(t, s, req{method: "POST", path: "/api/sign", origin: self, body: jobRequest{Ticket: ticket, Origin: dashboard, PIN: "1234"}})
 	if rec.Code != http.StatusBadRequest {
-		t.Errorf("short digest: %d", rec.Code)
+		t.Errorf("short PIN: %d", rec.Code)
 	}
 }
 
-func TestPinLock(t *testing.T) {
-	s, p := newTestServer(t)
-	certs, _ := p.Certificates(t.Context())
-	digest := base64.StdEncoding.EncodeToString(make([]byte, 32))
-	codes := []int{http.StatusUnauthorized, http.StatusUnauthorized, http.StatusLocked, http.StatusLocked}
-	for i, want := range codes {
-		pin := "00000000"
-		if i == 3 {
-			pin = "12345678"
-		}
-		rec := do(t, s, "POST", "/v1/sign", "127.0.0.1:47321", origin, signRequest{CertificateID: certs[0].ID, Digest: digest, PIN: pin}, nil)
-		if rec.Code != want {
-			t.Errorf("attempt %d: got %d want %d (%s)", i+1, rec.Code, want, rec.Body)
-		}
+func TestBackendErrors(t *testing.T) {
+	s, fb, _ := setup(t)
+	fb.jobErr = &backend.Error{Status: 410, Code: "job_expired", Message: "expired"}
+	rec := do(t, s, req{method: "POST", path: "/api/job", origin: self, body: jobRequest{Ticket: ticket, Origin: dashboard}})
+	if rec.Code != 410 || !strings.Contains(rec.Body.String(), "job_expired") {
+		t.Errorf("expired: %d %s", rec.Code, rec.Body)
+	}
+	fb.jobErr = errors.New("dial tcp: refused")
+	rec = do(t, s, req{method: "POST", path: "/api/job", origin: self, body: jobRequest{Ticket: ticket, Origin: dashboard}})
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "backend_unreachable") {
+		t.Errorf("unreachable: %d %s", rec.Code, rec.Body)
 	}
 }

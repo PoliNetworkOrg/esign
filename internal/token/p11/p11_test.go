@@ -25,25 +25,27 @@ func TestModule(t *testing.T) {
 	if !st.Available || st.CardPresent == nil || !*st.CardPresent {
 		t.Fatalf("status: %+v", st)
 	}
-	certs, err := p.Certificates(t.Context())
-	if err != nil || len(certs) != 1 {
-		t.Fatalf("certificates: %v %v", certs, err)
-	}
-	digest := sha256.Sum256([]byte("to be signed"))
-
-	_, err = p.SignDigest(t.Context(), certs[0].ID, digest[:], "99999999")
-	if token.CodeOf(err) != token.CodePinIncorrect {
+	if _, err := p.Open(t.Context(), "99999999"); token.CodeOf(err) != token.CodePinIncorrect {
 		t.Fatalf("wrong PIN: %v", err)
 	}
-	sig, err := p.SignDigest(t.Context(), certs[0].ID, digest[:], pin)
+	session, err := p.Open(t.Context(), pin)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer session.Close()
+	digest := sha256.Sum256([]byte("to be signed"))
+	sig, err := session.SignDigest(t.Context(), digest[:])
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
-	if err := rsa.VerifyPKCS1v15(certs[0].Cert.PublicKey.(*rsa.PublicKey), crypto.SHA256, digest[:], sig); err != nil {
+	if err := rsa.VerifyPKCS1v15(session.Certificate().PublicKey.(*rsa.PublicKey), crypto.SHA256, digest[:], sig); err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	if _, err := p.SignDigest(t.Context(), "pkcs11:00", digest[:], pin); token.CodeOf(err) != token.CodeNotFound {
-		t.Fatalf("unknown certificate: %v", err)
+}
+
+func TestLastFour(t *testing.T) {
+	if LastFour("12345678") != "5678" || LastFour("5678") != "5678" {
+		t.Fatal("LastFour")
 	}
 }
 
@@ -52,7 +54,7 @@ func TestMissingModule(t *testing.T) {
 	if st := p.Status(t.Context()); st.Available {
 		t.Fatal("available without a module")
 	}
-	if _, err := p.Certificates(t.Context()); token.CodeOf(err) != token.CodeMiddlewareMissing {
+	if _, err := p.Open(t.Context(), "12345678"); token.CodeOf(err) != token.CodeMiddlewareMissing {
 		t.Fatalf("got %v", err)
 	}
 }

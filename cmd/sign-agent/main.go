@@ -14,7 +14,6 @@ import (
 	"syscall"
 
 	"github.com/PoliNetworkOrg/sign-agent/internal/autostart"
-	"github.com/PoliNetworkOrg/sign-agent/internal/certinfo"
 	"github.com/PoliNetworkOrg/sign-agent/internal/config"
 	"github.com/PoliNetworkOrg/sign-agent/internal/server"
 	"github.com/PoliNetworkOrg/sign-agent/internal/token"
@@ -60,7 +59,7 @@ func main() {
 	port := fs.Int("port", 0, "loopback port (default 47321)")
 	dev := fs.Bool("dev", false, "also allow dashboards on http://localhost:<any port>")
 	useSoft := fs.Bool("soft", false, "add a software development token (PIN "+soft.DefaultPIN+"); its signatures are not valid")
-	module := fs.String("pkcs11", "", "PKCS#11 module to use instead of the CIE middleware")
+	module := fs.String("pkcs11", "", "PKCS#11 module to use instead of the CIE middleware (implies --providers cie-mw)")
 	verbose := fs.Bool("v", false, "verbose logging")
 	_ = fs.Parse(args)
 
@@ -106,7 +105,7 @@ func main() {
 	}
 	if *module != "" {
 		cfg.PKCS11Module = *module
-		cfg.Providers = []string{"pkcs11"}
+		cfg.Providers = []string{"cie-mw"}
 	}
 	if *dev {
 		cfg.AllowedOrigins = append(cfg.AllowedOrigins, config.DevOrigins...)
@@ -142,15 +141,23 @@ func buildProviders(cfg config.Config, dir string, useSoft bool) ([]token.Provid
 	var providers []token.Provider
 	for _, name := range cfg.Providers {
 		switch name {
-		case "cie":
-			providers = append(providers, cie.New())
-		case "pkcs11":
+		case "cie-mw":
 			providers = append(providers, p11.New(p11.Options{
-				Name:       "pkcs11",
-				Label:      "CIE (CIE ID middleware)",
+				Name:       "cie-mw",
 				Path:       cfg.PKCS11Module,
 				Candidates: p11.CIEModules(),
+				PIN:        p11.LastFour,
+				PINLength:  8,
 			}))
+		case "opencie":
+			providers = append(providers, p11.New(p11.Options{
+				Name:       "opencie",
+				Path:       cfg.OpenCIEModule,
+				Candidates: p11.OpenCIEModules(dir),
+				PINLength:  8,
+			}))
+		case "cie":
+			providers = append(providers, cie.New())
 		case "soft":
 			useSoft = true
 		default:
@@ -176,18 +183,6 @@ func printStatus(ctx context.Context, providers []token.Provider) {
 		}
 		if st.CardPresent != nil {
 			fmt.Printf("  card present: %v\n", *st.CardPresent)
-		}
-		if !st.Available {
-			continue
-		}
-		certs, err := p.Certificates(ctx)
-		if err != nil {
-			fmt.Printf("  certificates: %v\n", err)
-			continue
-		}
-		for _, c := range certs {
-			info := certinfo.Parse(c.Cert)
-			fmt.Printf("  certificate: %s (%s), issuer %q, valid until %s\n", info.DisplayName, info.FiscalCode, c.Cert.Issuer.CommonName, c.Cert.NotAfter.Format("2006-01-02"))
 		}
 	}
 }
