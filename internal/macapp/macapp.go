@@ -1,5 +1,5 @@
 // Package macapp tells how macOS launched the app bundle: Launch Services starts a bundle without arguments, both
-// when the user opens the app and when a browser follows a polinetwork-sign:// link, and delivers the reason as an
+// when the user opens the app and when a browser follows a polinetwork-esign:// link, and delivers the reason as an
 // Apple Event.
 package macapp
 

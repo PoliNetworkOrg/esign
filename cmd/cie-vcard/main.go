@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie/cardsim"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie/cardsim"
 )
 
 func main() {

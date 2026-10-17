@@ -5,7 +5,7 @@ set -euo pipefail
 cd /src
 PIN=12345678
 CONTROL=http://127.0.0.1:35999
-export SIGN_AGENT_TEST_PIN=$PIN SIGN_AGENT_TEST_VCARD=$CONTROL SIGN_AGENT_TEST_CSCA=/tmp/csca.pem
+export ESIGN_TEST_PIN=$PIN ESIGN_TEST_VCARD=$CONTROL ESIGN_TEST_CSCA=/tmp/csca.pem
 MIEKG=$(go list -m -f '{{.Dir}}' github.com/miekg/pkcs11)
 
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -60,23 +60,23 @@ echo "   card PIN tries left: $(tries)"
 
 step "b. Agent's cie provider through pcsc-lite"
 start_card
-SIGN_AGENT_TEST_PCSC=1 go test -count=1 -v -run 'TestPCSCInterop' ./internal/token/cie/ 2>&1 | grep -E '^(=== RUN|--- |\s+pcsc_interop_test|ok|FAIL|PASS)'
+ESIGN_TEST_PCSC=1 go test -count=1 -v -run 'TestPCSCInterop' ./internal/token/cie/ 2>&1 | grep -E '^(=== RUN|--- |\s+pcsc_interop_test|ok|FAIL|PASS)'
 
 step "c. Agent's p11 provider (cie-mw) on the official module, pairing automatically"
 start_card
-SIGN_AGENT_TEST_CIEMW=$CIE_MW_MODULE go test -count=1 -v -run 'TestOfficialMiddlewareInterop' ./internal/token/p11/ 2>/dev/null \
+ESIGN_TEST_CIEMW=$CIE_MW_MODULE go test -count=1 -v -run 'TestOfficialMiddlewareInterop' ./internal/token/p11/ 2>/dev/null \
 	| grep -E '^(=== RUN|--- |\s+cie_interop_test|ok|FAIL|PASS)'
 
-step "c2. The same, with the module in a worker process (sign-agent worker), pairing inside the worker"
+step "c2. The same, with the module in a worker process (esign worker), pairing inside the worker"
 start_card
-SIGN_AGENT_TEST_CIEMW=$CIE_MW_MODULE go test -count=1 -v -run 'TestWorkerPairsCIE' ./cmd/sign-agent/ 2>/dev/null \
+ESIGN_TEST_CIEMW=$CIE_MW_MODULE go test -count=1 -v -run 'TestWorkerPairsCIE' ./cmd/esign/ 2>/dev/null \
 	| grep -E '^(=== RUN|--- |\s+main_test|ok|FAIL|PASS)'
 
 step "d. Agent's p11 provider (opencie) on OpenCIE's released module, pairing automatically"
 start_card
-SIGN_AGENT_TEST_OPENCIE=$OPENCIE_MODULE go test -count=1 -v -run 'TestOpenCIEInterop' ./internal/token/p11/ 2>/dev/null \
+ESIGN_TEST_OPENCIE=$OPENCIE_MODULE go test -count=1 -v -run 'TestOpenCIEInterop' ./internal/token/p11/ 2>/dev/null \
 	| grep -E '^(=== RUN|--- |\s+cie_interop_test|ok|FAIL|PASS)'
 
 step "e. The agent's status command sees all three providers"
 start_card
-go run ./cmd/sign-agent status 2>/dev/null
+go run ./cmd/esign status 2>/dev/null

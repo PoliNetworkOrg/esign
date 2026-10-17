@@ -22,7 +22,7 @@ Done once. Creating a Developer ID certificate and enabling the App Store Connec
 of the PoliNetwork APS Apple Developer account (team `842636PS9J`); Admins can't create Developer ID certificates.
 
 1. On the Mac that holds the private key, create the certificate request (already done once; the key is in
-   `~/dev/polinetwork/.signing/sign-agent/`, never commit it):
+   `~/dev/polinetwork/.signing/esign/`, never commit it):
 
    ```sh
    ./scripts/setup-macos-signing.sh csr
@@ -34,7 +34,7 @@ of the PoliNetwork APS Apple Developer account (team `842636PS9J`); Admins can't
    (`developerID_application.cer`).
 3. At <https://appstoreconnect.apple.com> open **Users and Access** → **Integrations** (App Store Connect API is
    selected). The first time, the Account Holder clicks **Request Access** and accepts the terms; Apple approves it,
-   usually quickly. Then **Team Keys** → **Generate API Key** (or **+**), name it `sign-agent notarization`, access
+   usually quickly. Then **Team Keys** → **Generate API Key** (or **+**), name it `esign notarization`, access
    **Developer**, **Generate**. Download `AuthKey_<KEY ID>.p8` (only downloadable once); the **Key ID** is in the key's
    row and the **Issuer ID** is above the list.
 4. Store the GitHub secrets (needs `gh` with admin rights on the repository):
@@ -55,18 +55,18 @@ Secrets used: `MACOS_CERTIFICATE_P12`, `MACOS_CERTIFICATE_PASSWORD`, `APPLE_API_
 
 SignPath Foundation signs open-source projects for free; the certificate names "SignPath Foundation" as publisher.
 
-1. Apply at <https://signpath.org/apply> for `PoliNetworkOrg/sign-agent` (MIT, public, automated builds, released
+1. Apply at <https://signpath.org/apply> for `PoliNetworkOrg/esign` (MIT, public, automated builds, released
    since v0.1.0). Point them to this policy.
 2. Once approved, in SignPath create (or receive) a project with a GitHub trusted build system, an artifact
-   configuration that signs `sign-agent.exe` inside the Windows `.zip`, and a release signing policy.
+   configuration that signs `esign.exe` inside the Windows `.zip`, and a release signing policy.
 3. Set the repository variables and secret:
 
    ```sh
-   gh variable set SIGNPATH_ORGANIZATION_ID --repo PoliNetworkOrg/sign-agent --body <organization id>
-   gh variable set SIGNPATH_PROJECT_SLUG --repo PoliNetworkOrg/sign-agent --body <project slug>
-   gh variable set SIGNPATH_SIGNING_POLICY_SLUG --repo PoliNetworkOrg/sign-agent --body release-signing
-   gh variable set SIGNPATH_ARTIFACT_CONFIGURATION_SLUG --repo PoliNetworkOrg/sign-agent --body <configuration slug>
-   gh secret set SIGNPATH_API_TOKEN --repo PoliNetworkOrg/sign-agent   # a CI user's API token
+   gh variable set SIGNPATH_ORGANIZATION_ID --repo PoliNetworkOrg/esign --body <organization id>
+   gh variable set SIGNPATH_PROJECT_SLUG --repo PoliNetworkOrg/esign --body <project slug>
+   gh variable set SIGNPATH_SIGNING_POLICY_SLUG --repo PoliNetworkOrg/esign --body release-signing
+   gh variable set SIGNPATH_ARTIFACT_CONFIGURATION_SLUG --repo PoliNetworkOrg/esign --body <configuration slug>
+   gh secret set SIGNPATH_API_TOKEN --repo PoliNetworkOrg/esign   # a CI user's API token
    ```
 
 The next tagged release submits the Windows build to SignPath and publishes the signed zip.

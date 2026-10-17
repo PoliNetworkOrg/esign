@@ -22,20 +22,114 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      stable: ${{ steps.channel.outputs.stable }}
+      repository: ${{ steps.repository.outputs.built }}
+    env:
+      TAG: ${{ github.ref_name }}
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+      - name: Channel
+        id: channel
+        # v1.2.3-rc.1 and similar are pre-releases: GitHub only, never the package repositories or the AUR.
+        run: if [[ "$TAG" == *-* ]]; then echo stable=false; else echo stable=true; fi >> "$GITHUB_OUTPUT"
+      - name: Sign the RPMs and build the APT and DNF repositories
+        id: repository
+        if: steps.channel.outputs.stable == 'true'
+        env:
+          GPG_KEY: ${{ secrets.LINUX_REPOSITORY_GPG_KEY }}
+        run: |
+          if [ -z "$GPG_KEY" ] || [ ! -f packaging/linux/repository-key.asc ]; then
+            echo "::warning::No repository key (docs/linux-packages.md): the APT and DNF repositories are not updated"
+            exit 0
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq apt-utils createrepo-c rpm
+          printf '%s\n' "$GPG_KEY" | gpg --batch --import
+          GPG_KEY_ID="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')"
+          if [ "$GPG_KEY_ID" != "$(gpg --show-keys --with-colons packaging/linux/repository-key.asc | awk -F: '/^fpr/ {print $10; exit}')" ]; then
+            echo "::error::LINUX_REPOSITORY_GPG_KEY is not the key in packaging/linux/repository-key.asc"
+            exit 1
+          fi
+          GPG_KEY_ID="$GPG_KEY_ID" ./scripts/linux-repository.sh dist "$RUNNER_TEMP/site"
+          echo built=true >> "$GITHUB_OUTPUT"
       - name: Checksums
         working-directory: dist
         run: sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
         run: |
           flags=()
-          # v1.2.3-rc.1 and similar are pre-releases.
-          if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
+          if [ "${{ steps.channel.outputs.stable }}" != true ]; then flags+=(--prerelease); fi
           gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --verify-tag --generate-notes "${flags[@]}"
+      - uses: actions/upload-pages-artifact@v5
+        if: steps.repository.outputs.built == 'true'
+        with:
+          path: ${{ runner.temp }}/site
+
+  pages:
+    name: APT and DNF repositories
+    needs: release
+    if: needs.release.outputs.repository == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v5
+        id: deploy
+
+  aur:
+    name: AUR
+    needs: release
+    if: needs.release.outputs.stable == 'true'
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      TAG: ${{ github.ref_name }}
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+    steps:
+      - name: Check the AUR key
+        id: key
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::warning::No AUR_SSH_PRIVATE_KEY secret (docs/linux-packages.md): the AUR package is not updated"
+          else
+            echo present=true >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install tools
+        if: steps.key.outputs.present == 'true'
+        run: pacman -Syu --noconfirm --needed git openssh pacman-contrib
+      - uses: actions/checkout@v7
+        if: steps.key.outputs.present == 'true'
+      - name: Prepare and test the package
+        if: steps.key.outputs.present == 'true'
+        # makepkg refuses to run as root.
+        run: |
+          useradd -m builder
+          chown -R builder .
+          su builder -c "./scripts/aur-package.sh '$TAG' /home/builder/aur"
+      - name: Push to the AUR
+        if: steps.key.outputs.present == 'true'
+        run: |
+          # Explicit paths: ssh reads root's passwd home, not the $HOME of container jobs.
+          ssh="$RUNNER_TEMP/ssh"
+          mkdir -p "$ssh" && chmod 700 "$ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$ssh/aur" && chmod 600 "$ssh/aur"
+          # aur.archlinux.org's published Ed25519 key, SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4.
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > "$ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $ssh/aur -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh/known_hosts"
+          git clone ssh://aur@aur.archlinux.org/polinetwork-esign-bin.git aur
+          cp /home/builder/aur/PKGBUILD /home/builder/aur/.SRCINFO /home/builder/aur/polinetwork-esign.install aur/
+          cd aur
+          git add PKGBUILD .SRCINFO polinetwork-esign.install
+          if git diff --cached --quiet; then echo "The AUR already has $TAG"; exit 0; fi
+          git -c user.name="PoliNetwork APS" -c user.email=admin@polinetwork.org commit -m "Update to ${TAG#v}"
+          git push origin HEAD:master

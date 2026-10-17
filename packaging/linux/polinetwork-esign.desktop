@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=PoliNetwork Sign Agent
+Name=PoliNetwork eSign
 Comment=Starts the agent that signs PDFs with your CIE for the PoliNetwork dashboard
-Exec="/usr/bin/polinetwork-sign-agent" open-url %u
+Exec="/usr/bin/polinetwork-esign" open-url %u
 Terminal=false
 NoDisplay=true
-MimeType=x-scheme-handler/polinetwork-sign;
+MimeType=x-scheme-handler/polinetwork-esign;

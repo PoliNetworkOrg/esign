@@ -25,7 +25,7 @@ func plistPath() (string, error) {
 // LogPath is where the agent started at login writes its log.
 func LogPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "Library", "Logs", "PoliNetwork Sign Agent.log")
+	return filepath.Join(home, "Library", "Logs", "PoliNetwork eSign.log")
 }
 
 func xmlEscape(s string) string {

@@ -10,12 +10,12 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/config"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/p11"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/soft"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/worker"
+	"github.com/PoliNetworkOrg/esign/internal/config"
+	"github.com/PoliNetworkOrg/esign/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie"
+	"github.com/PoliNetworkOrg/esign/internal/token/p11"
+	"github.com/PoliNetworkOrg/esign/internal/token/soft"
+	"github.com/PoliNetworkOrg/esign/internal/token/worker"
 )
 
 // providerSpec is a configured provider and how it is loaded, for the server and for `doctor`.
@@ -247,7 +247,7 @@ func closeProviders(specs []providerSpec) {
 	}
 }
 
-// runWorker is `sign-agent worker`: it serves one provider to the agent over stdin and stdout.
+// runWorker is `esign worker`: it serves one provider to the agent over stdin and stdout.
 func runWorker(args []string) error {
 	fs := flag.NewFlagSet("worker", flag.ContinueOnError)
 	name := fs.String("provider", "", "provider: cie-mw, opencie or soft")

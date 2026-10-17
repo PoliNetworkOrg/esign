@@ -55,7 +55,7 @@ func serviceLog(dir string) io.Writer {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return io.Discard
 	}
-	path := filepath.Join(dir, "sign-agent.log")
+	path := filepath.Join(dir, "esign.log")
 	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
 	if st, err := os.Stat(path); err == nil && st.Size() > 1<<20 {
 		flags |= os.O_TRUNC

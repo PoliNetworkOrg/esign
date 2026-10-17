@@ -9,22 +9,22 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/autostart"
+	"github.com/PoliNetworkOrg/esign/internal/autostart"
 )
 
 // packagedExe is where the Linux package installs the agent.
-const packagedExe = "/usr/bin/polinetwork-sign-agent"
+const packagedExe = "/usr/bin/polinetwork-esign"
 
 // TestPackagingFiles checks that the Linux package ships the same service and link handler that `install` writes.
-// SIGN_AGENT_UPDATE_PACKAGING=1 rewrites them.
+// ESIGN_UPDATE_PACKAGING=1 rewrites them.
 func TestPackagingFiles(t *testing.T) {
 	files := map[string]string{
-		"polinetwork-sign-agent.desktop": DesktopEntry(packagedExe),
-		"polinetwork-sign-agent.service": autostart.SystemdUnit(packagedExe),
+		"polinetwork-esign.desktop": DesktopEntry(packagedExe),
+		"polinetwork-esign.service": autostart.SystemdUnit(packagedExe),
 	}
 	for name, want := range files {
 		path := filepath.Join("..", "..", "packaging", "linux", name)
-		if os.Getenv("SIGN_AGENT_UPDATE_PACKAGING") == "1" {
+		if os.Getenv("ESIGN_UPDATE_PACKAGING") == "1" {
 			if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -35,7 +35,7 @@ func TestPackagingFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		if string(got) != want {
-			t.Errorf("%s differs from the template; run SIGN_AGENT_UPDATE_PACKAGING=1 go test ./internal/install", path)
+			t.Errorf("%s differs from the template; run ESIGN_UPDATE_PACKAGING=1 go test ./internal/install", path)
 		}
 	}
 }
@@ -44,7 +44,7 @@ func TestDesktopEntry(t *testing.T) {
 	e := DesktopEntry(`/home/a b/$x/"q"/bin`)
 	for _, want := range []string{
 		`Exec="/home/a b/\$x/\"q\"/bin" open-url %u`,
-		"MimeType=x-scheme-handler/polinetwork-sign;",
+		"MimeType=x-scheme-handler/polinetwork-esign;",
 		"NoDisplay=true",
 	} {
 		if !strings.Contains(e, want) {
@@ -67,11 +67,11 @@ func TestInfoPlist(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"<string>org.polinetwork.sign-agent</string>",
-		"<array><string>polinetwork-sign</string></array>",
+		"<string>org.polinetwork.esign</string>",
+		"<array><string>polinetwork-esign</string></array>",
 		"<key>LSUIElement</key><true/>",
 		"<key>CFBundleShortVersionString</key><string>1.4.2</string>",
-		"<key>CFBundleExecutable</key><string>sign-agent</string>",
+		"<key>CFBundleExecutable</key><string>esign</string>",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("missing %s", want)
@@ -92,9 +92,9 @@ func TestBundleOf(t *testing.T) {
 		t.Skip("macOS paths")
 	}
 	for exe, want := range map[string]string{
-		"/Users/a/Applications/PoliNetwork Sign Agent.app/Contents/MacOS/sign-agent": "/Users/a/Applications/PoliNetwork Sign Agent.app",
-		"/Users/a/Downloads/sign-agent":                                              "",
-		"/Users/a/X.app/Contents/Resources/agent":                                    "",
+		"/Users/a/Applications/PoliNetwork eSign.app/Contents/MacOS/esign": "/Users/a/Applications/PoliNetwork eSign.app",
+		"/Users/a/Downloads/esign":                "",
+		"/Users/a/X.app/Contents/Resources/agent": "",
 	} {
 		got, ok := BundleOf(exe)
 		if got != want || ok != (want != "") {

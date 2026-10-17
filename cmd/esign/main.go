@@ -1,4 +1,4 @@
-// Command sign-agent lets the PoliNetwork dashboard sign documents with the Italian CIE on this computer.
+// Command esign lets the PoliNetwork dashboard sign documents with the Italian CIE on this computer.
 package main
 
 import (
@@ -17,30 +17,30 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/autostart"
-	"github.com/PoliNetworkOrg/sign-agent/internal/config"
-	"github.com/PoliNetworkOrg/sign-agent/internal/install"
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
-	"github.com/PoliNetworkOrg/sign-agent/internal/macapp"
-	"github.com/PoliNetworkOrg/sign-agent/internal/server"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/soft"
+	"github.com/PoliNetworkOrg/esign/internal/autostart"
+	"github.com/PoliNetworkOrg/esign/internal/config"
+	"github.com/PoliNetworkOrg/esign/internal/install"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/macapp"
+	"github.com/PoliNetworkOrg/esign/internal/server"
+	"github.com/PoliNetworkOrg/esign/internal/token/soft"
 )
 
 // version is set at build time with -ldflags "-X main.version=…".
 var version = "dev"
 
-const usage = `PoliNetwork Sign Agent %s
+const usage = `PoliNetwork eSign %s
 
 Lets the PoliNetwork dashboard sign PDFs with your CIE (Carta d'Identità Elettronica).
 
 Usage:
-  sign-agent [serve] [flags]   run the agent (default)
-  sign-agent install           install for this user: copy the agent to a stable place, start it at login,
-                               and let the dashboard start it with polinetwork-sign:// links
-  sign-agent uninstall         undo install
-  sign-agent status [flags]    show readers, cards and certificates, then exit
-  sign-agent doctor [flags]    print a diagnostic report for support
-  sign-agent version           print the version
+  esign [serve] [flags]   run the agent (default)
+  esign install           install for this user: copy the agent to a stable place, start it at login,
+                          and let the dashboard start it with polinetwork-esign:// links
+  esign uninstall         undo install
+  esign status [flags]    show readers, cards and certificates, then exit
+  esign doctor [flags]    print a diagnostic report for support
+  esign version           print the version
 
 Flags:
 `
@@ -77,7 +77,7 @@ func main() {
 
 	hasConsole := attachConsole()
 
-	fs := flag.NewFlagSet("sign-agent", flag.ExitOnError)
+	fs := flag.NewFlagSet("esign", flag.ExitOnError)
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), usage, version)
 		fs.PrintDefaults()
@@ -117,7 +117,7 @@ func main() {
 			fatal(err)
 		}
 		fmt.Printf("Installed %s.\n", firstNonEmpty(res.App, res.Exe))
-		fmt.Println("The agent starts when you log in and is running now; the dashboard can start it with polinetwork-sign://open links.")
+		fmt.Println("The agent starts when you log in and is running now; the dashboard can start it with polinetwork-esign://open links.")
 		return
 	case "uninstall":
 		notes, err := install.Uninstall(executable())
@@ -192,7 +192,7 @@ func main() {
 		Version:        version,
 		Logger:         logger,
 	})
-	logger.Info("PoliNetwork Sign Agent listening", "address", fmt.Sprintf("http://127.0.0.1:%d", cfg.Port), "origins", cfg.AllowedOrigins, "version", version)
+	logger.Info("PoliNetwork eSign listening", "address", fmt.Sprintf("http://127.0.0.1:%d", cfg.Port), "origins", cfg.AllowedOrigins, "version", version)
 	if err := srv.ListenAndServe(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		if _, ok := launch.Probe(context.Background(), cfg.Port); ok {
 			logger.Info("another agent is already running", "port", cfg.Port)
@@ -204,7 +204,7 @@ func main() {
 }
 
 // runApp handles a launch without arguments from the desktop: opening the app (or double-clicking the Windows
-// executable) installs it when needed, makes sure the agent runs and shows its page; a polinetwork-sign:// link only
+// executable) installs it when needed, makes sure the agent runs and shows its page; a polinetwork-esign:// link only
 // makes sure the agent runs.
 func runApp() int {
 	how := macapp.Wait(2 * time.Second)
@@ -227,20 +227,20 @@ func runApp() int {
 		return 1
 	}
 	if err := launch.OpenBrowser(fmt.Sprintf("http://127.0.0.1:%d/", port)); err != nil {
-		fmt.Fprintln(os.Stderr, "sign-agent:", err)
+		fmt.Fprintln(os.Stderr, "esign:", err)
 	}
 	return 0
 }
 
-// handleURL starts the agent for a polinetwork-sign:// link. Anything but launch.OpenURL is ignored: a link cannot
+// handleURL starts the agent for a polinetwork-esign:// link. Anything but launch.OpenURL is ignored: a link cannot
 // pass arguments to the agent.
 func handleURL(url string) int {
 	if !launch.ValidURL(url) {
-		fmt.Fprintf(os.Stderr, "sign-agent: ignoring the link %q: only %s is accepted\n", url, launch.OpenURL)
+		fmt.Fprintf(os.Stderr, "esign: ignoring the link %q: only %s is accepted\n", url, launch.OpenURL)
 		return 0
 	}
 	if err := launch.EnsureRunning(context.Background(), configuredPort(), executable(), autostart.Start); err != nil {
-		fmt.Fprintln(os.Stderr, "sign-agent:", err)
+		fmt.Fprintln(os.Stderr, "esign:", err)
 		return 1
 	}
 	return 0
@@ -293,6 +293,6 @@ func firstNonEmpty(s ...string) string {
 }
 
 func fatal(err error) {
-	fmt.Fprintln(os.Stderr, "sign-agent:", err)
+	fmt.Fprintln(os.Stderr, "esign:", err)
 	os.Exit(1)
 }

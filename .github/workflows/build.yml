@@ -103,6 +103,8 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
             dist/*.zip
             dist/*.dmg
           if-no-files-found: error

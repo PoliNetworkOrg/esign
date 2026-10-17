@@ -1,4 +1,4 @@
-// Package launch finds a running agent, starts one when needed, and handles the polinetwork-sign:// link the
+// Package launch finds a running agent, starts one when needed, and handles the polinetwork-esign:// link the
 // dashboard offers when the agent is not running.
 package launch
 
@@ -14,7 +14,7 @@ import (
 )
 
 // Scheme is the URL scheme registered for the agent.
-const Scheme = "polinetwork-sign"
+const Scheme = "polinetwork-esign"
 
 // OpenURL is the only link the agent acts on: it starts the agent. Links carry no arguments, so a web page cannot
 // make the agent do anything but start.
@@ -26,7 +26,7 @@ func ValidURL(u string) bool {
 }
 
 // ServerHeader prefixes the Server header the agent sends, followed by its version.
-const ServerHeader = "PoliNetwork-Sign-Agent/"
+const ServerHeader = "PoliNetwork-eSign/"
 
 // Probe returns the version of the agent listening on the loopback port, or ok=false when none answers there.
 func Probe(ctx context.Context, port int) (version string, ok bool) {

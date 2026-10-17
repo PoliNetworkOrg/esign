@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie/ias"
+	"github.com/PoliNetworkOrg/esign/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie/ias"
 )
 
 // Reader is a card reader and the ATR of the card on it, nil when it is empty.

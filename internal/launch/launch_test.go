@@ -5,20 +5,20 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
-	"github.com/PoliNetworkOrg/sign-agent/internal/server"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/server"
 )
 
 func TestValidURL(t *testing.T) {
 	cases := map[string]bool{
-		"polinetwork-sign://open":                    true,
-		"polinetwork-sign://open/":                   true,
-		"polinetwork-sign://open?x=1":                false,
-		"polinetwork-sign://open/--pkcs11=/tmp/x.so": false,
-		"polinetwork-sign://install":                 false,
-		"POLINETWORK-SIGN://open":                    false,
-		"polinetwork-sign://open\" --dev":            false,
-		"":                                           false,
+		"polinetwork-esign://open":                    true,
+		"polinetwork-esign://open/":                   true,
+		"polinetwork-esign://open?x=1":                false,
+		"polinetwork-esign://open/--pkcs11=/tmp/x.so": false,
+		"polinetwork-esign://install":                 false,
+		"POLINETWORK-ESIGN://open":                    false,
+		"polinetwork-esign://open\" --dev":            false,
+		"":                                            false,
 	}
 	for u, want := range cases {
 		if got := launch.ValidURL(u); got != want {

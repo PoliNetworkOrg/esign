@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 )
 
 // Serve answers the parent's requests for provider p until in ends. It runs in the child process. At most one session

@@ -6,7 +6,7 @@ import (
 
 	"github.com/ebfe/scard"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie/ias"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie/ias"
 )
 
 // pcscConnector reaches the readers through PC/SC: winscard on Windows, the PCSC framework on macOS, pcsc-lite on

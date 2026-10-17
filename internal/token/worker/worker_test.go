@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/soft"
+	"github.com/PoliNetworkOrg/esign/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token/soft"
 )
 
-const helperEnv = "SIGN_AGENT_WORKER_HELPER"
+const helperEnv = "ESIGN_WORKER_HELPER"
 
 // TestMain lets the test binary act as the worker child: the parent tests run it again with helperEnv set.
 func TestMain(m *testing.M) {
@@ -195,7 +195,7 @@ func TestCancelKillsWorker(t *testing.T) {
 }
 
 func TestMissingWorker(t *testing.T) {
-	p := New(Options{Name: "cie-mw", Command: []string{"/nonexistent/sign-agent", "worker"}})
+	p := New(Options{Name: "cie-mw", Command: []string{"/nonexistent/esign", "worker"}})
 	if st := p.Status(t.Context()); st.Available || st.Provider != "cie-mw" {
 		t.Fatalf("status: %+v", st)
 	}

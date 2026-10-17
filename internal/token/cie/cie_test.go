@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie/cardsim"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie/ias"
+	"github.com/PoliNetworkOrg/esign/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie/cardsim"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie/ias"
 )
 
 var (

@@ -1,4 +1,4 @@
-module github.com/PoliNetworkOrg/sign-agent
+module github.com/PoliNetworkOrg/esign
 
 go 1.26.1
 

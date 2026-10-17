@@ -1,33 +1,66 @@
-# Debian package: ./scripts/build-linux.sh builds it when nfpm is installed: it sets ARCH and VERSION and stages the
-# binary in dist/deb/.
-name: polinetwork-sign-agent
+# Linux packages (.deb, .rpm, Arch .pkg.tar.zst): ./scripts/build-linux.sh builds them when nfpm is installed: it sets
+# ARCH and VERSION and stages the binary in dist/pkg/. When packaging/linux/repository-key.asc exists it appends
+# nfpm-repository.yaml to `contents`, which therefore stays the last key.
+name: polinetwork-esign
 arch: ${ARCH}
 platform: linux
 version: ${VERSION}
+version_schema: none
+release: "1"
 section: utils
 priority: optional
-maintainer: PoliNetwork APS
+maintainer: PoliNetwork APS <admin@polinetwork.org>
 description: |-
   Signs PDFs with the Italian electronic identity card (CIE) for the PoliNetwork dashboard.
   The dashboard opens the agent's page on 127.0.0.1:47321; the PIN goes only to the card.
 vendor: PoliNetwork APS
-homepage: https://github.com/PoliNetworkOrg/sign-agent
+homepage: https://github.com/PoliNetworkOrg/esign
 license: MIT
 depends:
   - pcscd
   - libpcsclite1
-contents:
-  - src: dist/deb/polinetwork-sign-agent
-    dst: /usr/bin/polinetwork-sign-agent
-    file_info:
-      mode: 0755
-  # The same entries `sign-agent install` writes per user (checked by internal/install tests).
-  - src: packaging/linux/polinetwork-sign-agent.desktop
-    dst: /usr/share/applications/polinetwork-sign-agent.desktop
-  - src: packaging/linux/polinetwork-sign-agent.service
-    dst: /usr/lib/systemd/user/polinetwork-sign-agent.service
-  - src: README.md
-    dst: /usr/share/doc/polinetwork-sign-agent/README.md
+overrides:
+  deb:
+    # Versions up to v0.1.x were packaged as polinetwork-sign-agent.
+    replaces:
+      - polinetwork-sign-agent
+    conflicts:
+      - polinetwork-sign-agent
+  rpm:
+    depends:
+      - pcsc-lite
+      - pcsc-lite-libs
+      - pcsc-lite-ccid
+  archlinux:
+    depends:
+      - glibc
+      - pcsclite
+      - ccid
 scripts:
   postinstall: packaging/linux/postinstall.sh
   preremove: packaging/linux/preremove.sh
+archlinux:
+  packager: PoliNetwork APS <admin@polinetwork.org>
+  scripts:
+    postupgrade: packaging/linux/postinstall.sh
+contents:
+  - src: dist/pkg/polinetwork-esign
+    dst: /usr/bin/polinetwork-esign
+    file_info:
+      mode: 0755
+  # The same entries `esign install` writes per user (checked by internal/install tests).
+  - src: packaging/linux/polinetwork-esign.desktop
+    dst: /usr/share/applications/polinetwork-esign.desktop
+  - src: packaging/linux/polinetwork-esign.service
+    dst: /usr/lib/systemd/user/polinetwork-esign.service
+  - src: README.md
+    dst: /usr/share/doc/polinetwork-esign/README.md
+  - src: LICENSE
+    dst: /usr/share/doc/polinetwork-esign/LICENSE
+    packager: deb
+  - src: LICENSE
+    dst: /usr/share/licenses/polinetwork-esign/LICENSE
+    packager: rpm
+  - src: LICENSE
+    dst: /usr/share/licenses/polinetwork-esign/LICENSE
+    packager: archlinux

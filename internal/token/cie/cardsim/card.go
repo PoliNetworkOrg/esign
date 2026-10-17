@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/cie/ias"
+	"github.com/PoliNetworkOrg/esign/internal/token/cie/ias"
 )
 
 // Variant is the chip family the simulator imitates.

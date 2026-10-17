@@ -6,18 +6,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
 )
 
 // macOS bundle identity.
 const (
-	AppName    = "PoliNetwork Sign Agent.app"
-	BundleID   = "org.polinetwork.sign-agent"
-	BundleExec = "sign-agent"
+	AppName    = "PoliNetwork eSign.app"
+	BundleID   = "org.polinetwork.esign"
+	BundleExec = "esign"
 )
 
 // InfoPlist is the app bundle's Info.plist: a background app (LSUIElement, no Dock icon) that handles
-// polinetwork-sign:// links. The universal binary runs natively; its x86_64 half serves the Intel-only CIE middleware
+// polinetwork-esign:// links. The universal binary runs natively; its x86_64 half serves the Intel-only CIE middleware
 // through Rosetta.
 func InfoPlist(version string) string {
 	v := bundleVersion(version)
@@ -26,12 +26,12 @@ func InfoPlist(version string) string {
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key><string>en</string>
-	<key>CFBundleDisplayName</key><string>PoliNetwork Sign Agent</string>
+	<key>CFBundleDisplayName</key><string>PoliNetwork eSign</string>
 	<key>CFBundleExecutable</key><string>%s</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundleIdentifier</key><string>%s</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-	<key>CFBundleName</key><string>PoliNetwork Sign Agent</string>
+	<key>CFBundleName</key><string>PoliNetwork eSign</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>%s</string>
 	<key>CFBundleVersion</key><string>%s</string>

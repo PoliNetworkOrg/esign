@@ -23,7 +23,7 @@ function show(id) {
 /** Tells the dashboard what happened; the dashboard also polls its backend, so this is only a shortcut. */
 function notify(status, detail) {
   try {
-    if (window.opener && origin) window.opener.postMessage({ type: "pn-sign-agent", status, detail }, origin)
+    if (window.opener && origin) window.opener.postMessage({ type: "pn-esign", status, detail }, origin)
   } catch {
     // The opener navigated away or is cross-origin isolated: polling covers it.
   }
@@ -32,7 +32,7 @@ function notify(status, detail) {
 async function api(path, body) {
   const res = await fetch(path, {
     method: body ? "POST" : "GET",
-    headers: { "X-PN-Sign-Agent": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
+    headers: { "X-PN-eSign": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
   })

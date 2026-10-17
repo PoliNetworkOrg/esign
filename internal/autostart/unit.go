@@ -19,7 +19,7 @@ func DesktopQuote(s string) string {
 // SystemdUnit is the user service running exe.
 func SystemdUnit(exe string) string {
 	return fmt.Sprintf(`[Unit]
-Description=PoliNetwork Sign Agent (CIE signing for the PoliNetwork dashboard)
+Description=PoliNetwork eSign (CIE signing for the PoliNetwork dashboard)
 After=graphical-session.target pcscd.socket
 
 [Service]

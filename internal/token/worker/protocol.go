@@ -1,4 +1,4 @@
-// Package worker runs a token provider in a child process ("sign-agent worker"), so that a crashing middleware does
+// Package worker runs a token provider in a child process ("esign worker"), so that a crashing middleware does
 // not take the agent down, and so that a module built for another CPU architecture (the official macOS CIE middleware
 // is x86_64 only) can be loaded by a child running under Rosetta.
 //
@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 )
 
 // maxFrame bounds a message: certificates and signatures are a few kilobytes.

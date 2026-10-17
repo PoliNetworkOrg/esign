@@ -42,12 +42,12 @@ func Message(msg string, isError bool) {
 			as = "critical"
 		}
 		script := `on run argv
-display alert "PoliNetwork Sign Agent" message (item 1 of argv) as ` + as + `
+display alert "PoliNetwork eSign" message (item 1 of argv) as ` + as + `
 end run`
 		_ = exec.Command("/usr/bin/osascript", "-e", script, msg).Run()
 		return
 	}
 	if path, err := exec.LookPath("notify-send"); err == nil {
-		_ = exec.Command(path, "PoliNetwork Sign Agent", msg).Run()
+		_ = exec.Command(path, "PoliNetwork eSign", msg).Run()
 	}
 }

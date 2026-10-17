@@ -1,4 +1,4 @@
-# PoliNetwork Sign Agent
+# PoliNetwork eSign
 
 A small program that lets the [PoliNetwork admin dashboard](https://github.com/PoliNetworkOrg/admin) sign PDFs with
 the Italian electronic identity card (CIE) on Windows, macOS and Linux.
@@ -35,54 +35,78 @@ finalized by the PoliNetwork backend (PAdES), the agent only signs a digest with
 
 ## Install
 
-Download the file for your system from the [latest release](https://github.com/PoliNetworkOrg/sign-agent/releases/latest).
+Download the file for your system from the [latest release](https://github.com/PoliNetworkOrg/esign/releases/latest).
 Installing needs no administrator rights: the agent is installed for your user only, starts when you log in, and lets
-the dashboard start it with a `polinetwork-sign://open` link when it is not running.
+the dashboard start it with a `polinetwork-esign://open` link when it is not running.
+
+Until v0.1.x the agent was called PoliNetwork Sign Agent. Installing PoliNetwork eSign removes it (app, login item,
+link handler, Debian package) and keeps its configuration and card pairings.
 
 ### macOS (Apple Silicon and Intel)
 
-1. Download `PoliNetwork-Sign-Agent-<version>-macos.dmg` (or the `.zip`) and open it.
-2. Open **PoliNetwork Sign Agent**. The app is not notarized yet, so macOS refuses the first time: open
-   **System Settings > Privacy & Security**, choose **Open Anyway** next to the message about PoliNetwork Sign Agent,
+1. Download `PoliNetwork-eSign-<version>-macos.dmg` (or the `.zip`) and open it.
+2. Open **PoliNetwork eSign**. The app is not notarized yet, so macOS refuses the first time: open
+   **System Settings > Privacy & Security**, choose **Open Anyway** next to the message about PoliNetwork eSign,
    and confirm.
 3. The app copies itself to `~/Applications`, starts at login (it appears in **System Settings > General > Login
    Items**) and opens `http://127.0.0.1:47321/` in your browser: "The agent is running".
 
 The official Software CIE module is built for Intel Macs only. On Apple Silicon the agent runs it in a helper process
 under Rosetta: if macOS offers to install Rosetta, accept (or run `softwareupdate --install-rosetta`). The first time you
-sign, macOS asks whether **PoliNetwork Sign Agent** may access data from other apps: allow it, so the agent can read the
+sign, macOS asks whether **PoliNetwork eSign** may access data from other apps: allow it, so the agent can read the
 card pairing that Software CIE keeps in its own folder.
 
 ### Windows
 
-1. Download `PoliNetwork-Sign-Agent-<version>-windows-amd64.zip`, extract it and double-click `sign-agent.exe`.
+1. Download `PoliNetwork-eSign-<version>-windows-amd64.zip`, extract it and double-click `esign.exe`.
 2. The program is not code-signed yet: if SmartScreen warns, choose **More info > Run anyway**.
-3. It copies itself to `%LOCALAPPDATA%\PoliNetwork\SignAgent`, starts at login, appears in **Settings > Apps >
+3. It copies itself to `%LOCALAPPDATA%\PoliNetwork\eSign`, starts at login, appears in **Settings > Apps >
    Installed apps**, and opens `http://127.0.0.1:47321/` in your browser.
 
 ### Linux
 
-Debian, Ubuntu and derivatives (amd64 or arm64):
+Packages for x86_64 (amd64) and arm64 (aarch64) install `pcscd` and the reader drivers, start the agent right away and
+at every login, and register the `polinetwork-esign://` link handler. Updates come with the rest of the system.
+
+**Arch Linux, Omarchy, Manjaro, EndeavourOS** and other Arch-based systems, from the
+[AUR](https://aur.archlinux.org/packages/polinetwork-esign-bin):
 
 ```sh
-sudo apt install ./polinetwork-sign-agent_<version>_amd64.deb   # installs pcscd too
-systemctl --user start polinetwork-sign-agent                    # or log out and in again
+yay -S polinetwork-esign-bin    # or: paru -S polinetwork-esign-bin
 ```
 
-Other distributions, from the `.tar.gz`:
+**Debian, Ubuntu, Linux Mint, Pop!_OS** and derivatives: download `polinetwork-esign_<version>_amd64.deb` (or
+`_arm64.deb`) from the [latest release](https://github.com/PoliNetworkOrg/esign/releases/latest), then
 
 ```sh
-tar xzf polinetwork-sign-agent-<version>-linux-amd64.tar.gz
-./polinetwork-sign-agent-<version>-linux-amd64/polinetwork-sign-agent install
+sudo apt install ./polinetwork-esign_<version>_amd64.deb
 ```
 
-`install` copies the agent to `~/.local/bin/polinetwork-sign-agent`, starts it with a systemd user service (or an XDG
-autostart entry without systemd) and registers the `polinetwork-sign://` link handler.
+The package adds the PoliNetwork APT repository, so `sudo apt upgrade` (or Software Updater) keeps it up to date.
 
-Cards are read through `pcscd`, which must be installed and running:
+**Fedora**:
 
 ```sh
-sudo apt install pcscd          # Fedora: sudo dnf install pcsc-lite; Arch: sudo pacman -S pcsclite ccid
+sudo dnf config-manager addrepo --from-repofile=https://polinetworkorg.github.io/esign/polinetwork-esign.repo
+sudo dnf install polinetwork-esign
+```
+
+or download `polinetwork-esign-<version>-1.x86_64.rpm` (or `.aarch64.rpm`) from the release and run
+`sudo dnf install ./polinetwork-esign-<version>-1.x86_64.rpm`, which adds the same repository. `sudo dnf upgrade`
+(or GNOME Software) keeps it up to date.
+
+**Other distributions**, from the `.tar.gz`:
+
+```sh
+tar xzf polinetwork-esign-<version>-linux-amd64.tar.gz
+./polinetwork-esign-<version>-linux-amd64/polinetwork-esign install
+```
+
+`install` copies the agent to `~/.local/bin/polinetwork-esign`, starts it with a systemd user service (or an XDG
+autostart entry without systemd) and registers the `polinetwork-esign://` link handler. Cards are read through `pcscd`,
+which must be installed and running, with the CCID reader driver (`ccid`, `libccid` or `pcsc-ccid`):
+
+```sh
 sudo systemctl enable --now pcscd.socket
 ```
 
@@ -99,15 +123,15 @@ card is blocked: unblock it with the PUK in the CIE software.
 
 ## Troubleshooting
 
-`sign-agent doctor` prints what support needs: version and architecture, installation, configuration and allowed
+`esign doctor` prints what support needs: version and architecture, installation, configuration and allowed
 dashboards, whether the agent is running, each CIE provider's module path and architecture, how it is loaded, the
 readers it sees and whether a card is on them. It never asks for the PIN. Run it and send the output:
 
-| System  | Command                                                                                                    |
-| ------- | ---------------------------------------------------------------------------------------------------------- |
-| macOS   | `~/Applications/PoliNetwork\ Sign\ Agent.app/Contents/MacOS/sign-agent doctor`                             |
-| Windows | `& "$env:LOCALAPPDATA\PoliNetwork\SignAgent\sign-agent.exe" doctor > "$HOME\Desktop\doctor.txt"` (PowerShell) |
-| Linux   | `polinetwork-sign-agent doctor` (or `~/.local/bin/polinetwork-sign-agent doctor`)                           |
+| System  | Command                                                                                              |
+| ------- | ---------------------------------------------------------------------------------------------------- |
+| macOS   | `~/Applications/PoliNetwork\ eSign.app/Contents/MacOS/esign doctor`                                  |
+| Windows | `& "$env:LOCALAPPDATA\PoliNetwork\eSign\esign.exe" doctor > "$HOME\Desktop\doctor.txt"` (PowerShell) |
+| Linux   | `polinetwork-esign doctor` (or `~/.local/bin/polinetwork-esign doctor`)                              |
 
 On Windows the agent is a windowless program: in a terminal its output can appear after the prompt, so writing it to a
 file as above is easier.
@@ -125,13 +149,13 @@ Common reports:
 - **agent: NOT running; another program uses port 47321** — close that program, or change `port` in the configuration
   (the dashboard expects 47321).
 
-Logs: macOS `~/Library/Logs/PoliNetwork Sign Agent.log`; Windows `%APPDATA%\PoliNetwork Sign Agent\sign-agent.log`;
-Linux `journalctl --user -u polinetwork-sign-agent`.
+Logs: macOS `~/Library/Logs/PoliNetwork eSign.log`; Windows `%APPDATA%\PoliNetwork eSign\esign.log`;
+Linux `journalctl --user -u polinetwork-esign`.
 
 ## Configuration
 
 Optional, in `config.json` in the configuration folder (`doctor` prints it): `~/Library/Application Support/PoliNetwork
-Sign Agent` on macOS, `%APPDATA%\PoliNetwork Sign Agent` on Windows, `~/.config/PoliNetwork Sign Agent` on Linux.
+eSign` on macOS, `%APPDATA%\PoliNetwork eSign` on Windows, `~/.config/PoliNetwork eSign` on Linux.
 
 ```json
 {
@@ -149,24 +173,24 @@ or Software CIE's environment), `always` (a crashing middleware cannot stop the 
 
 ## Commands
 
-| Command                  | What it does                                                                 |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| `sign-agent install`     | Install for this user, start at login, register `polinetwork-sign://` links  |
-| `sign-agent uninstall`   | Undo `install` and stop the agent                                            |
-| `sign-agent doctor`      | Print the diagnostic report                                                  |
-| `sign-agent status`      | Print readers, cards and providers                                           |
-| `sign-agent [serve]`     | Run the agent in the foreground                                              |
-| `sign-agent version`     | Print the version                                                            |
+| Command           | What it does                                                                 |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `esign install`   | Install for this user, start at login, register `polinetwork-esign://` links |
+| `esign uninstall` | Undo `install` and stop the agent                                            |
+| `esign doctor`    | Print the diagnostic report                                                  |
+| `esign status`    | Print readers, cards and providers                                           |
+| `esign [serve]`   | Run the agent in the foreground                                              |
+| `esign version`   | Print the version                                                            |
 
 Opening the macOS app or double-clicking the Windows program installs it when needed, starts the agent and shows its
-page. The only link the agent acts on is `polinetwork-sign://open`, and it only starts the agent.
+page. The only link the agent acts on is `polinetwork-esign://open`, and it only starts the agent.
 
 ## Development
 
 ```sh
 go test ./...
 ./scripts/test-softhsm.sh     # PKCS#11 tests on Linux with SoftHSM2, in Docker
-go run ./cmd/sign-agent --dev --soft   # development key, PIN 12345678
+go run ./cmd/esign --dev --soft   # development key, PIN 12345678
 ```
 
 cgo is required (PKCS#11, PC/SC). On a Mac whose Command Line Tools are older than the running macOS, point cgo at
@@ -195,7 +219,7 @@ pcsc-lite, then checks, each on a fresh card:
 3. the agent's `cie-mw` provider on the official module, in process and in a worker: automatic pairing (wrong PIN
    first), signatures, wrong PIN once paired;
 4. the same for `opencie` on OpenCIE;
-5. `sign-agent status`.
+5. `esign status`.
 
 The official sources are built unmodified, without optimization like the project's Eclipse "Debug" build (an
 optimizing compiler turns their undefined behaviour into crashes). The simulator verifies the terminal CV
@@ -208,11 +232,12 @@ Builds:
 
 ```sh
 ./scripts/build-macos.sh v1.2.3    # on a Mac: universal .app, .zip, .dmg
-./scripts/build-docker.sh v1.2.3   # anywhere with Docker: Linux amd64/arm64 (.tar.gz, .deb), Windows (.zip)
+./scripts/build-docker.sh v1.2.3   # anywhere with Docker: Linux amd64/arm64 (.tar.gz, .deb, .rpm, Arch), Windows (.zip)
 ```
 
 Releases: push a `v*` tag; `.github/workflows/release.yml` builds everything, adds `SHA256SUMS.txt` and publishes the
-GitHub release (a pre-release for tags such as `v1.2.3-rc.1`).
+GitHub release (a pre-release for tags such as `v1.2.3-rc.1`). Releases that are not pre-releases also update the APT
+and DNF repositories and the AUR package: see [`docs/linux-packages.md`](docs/linux-packages.md).
 
 ### Maintainer TODO before a public release
 
@@ -221,7 +246,7 @@ GitHub release (a pre-release for tags such as `v1.2.3-rc.1`).
   `com.apple.security.cs.disable-library-validation` entitlement (the agent loads the CIE middleware, which another team
   signed), notarize with `xcrun notarytool submit --wait` and staple (`xcrun stapler staple`) both the app and the
   `.dmg`. A stable signature also keeps macOS from asking again, after each update, for access to Software CIE's data.
-- **Windows code signing** (Authenticode) of `sign-agent.exe`, to avoid SmartScreen warnings; an icon and version
+- **Windows code signing** (Authenticode) of `esign.exe`, to avoid SmartScreen warnings; an icon and version
   resource would help too.
 - **Test on real hardware**: Windows 10/11 x64 (and Windows on ARM, which runs the x64 build emulated), Intel and Apple
   Silicon Macs with Software CIE, and the Linux distributions to support, each with a paired card.

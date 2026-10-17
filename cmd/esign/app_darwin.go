@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/install"
+	"github.com/PoliNetworkOrg/esign/internal/install"
 )
 
 // AppKit, which reads the launch's Apple Event, must run on the main thread.

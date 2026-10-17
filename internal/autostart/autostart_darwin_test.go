@@ -9,7 +9,7 @@ import (
 
 func TestPlist(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	exe := "/Users/a & b/Applications/PoliNetwork Sign Agent.app/Contents/MacOS/sign-agent"
+	exe := "/Users/a & b/Applications/PoliNetwork eSign.app/Contents/MacOS/esign"
 	path, err := plistPath()
 	if err != nil {
 		t.Fatal(err)

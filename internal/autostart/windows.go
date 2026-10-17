@@ -8,12 +8,12 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
 )
 
 const (
 	runKey    = `Software\Microsoft\Windows\CurrentVersion\Run`
-	valueName = "PoliNetworkSignAgent"
+	valueName = "PoliNetworkESign"
 )
 
 // Install adds the agent to the current user's Run key and starts it now.

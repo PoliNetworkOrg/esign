@@ -17,17 +17,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/config"
-	"github.com/PoliNetworkOrg/sign-agent/internal/install"
-	"github.com/PoliNetworkOrg/sign-agent/internal/launch"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/soft"
-	"github.com/PoliNetworkOrg/sign-agent/internal/token/worker"
+	"github.com/PoliNetworkOrg/esign/internal/config"
+	"github.com/PoliNetworkOrg/esign/internal/install"
+	"github.com/PoliNetworkOrg/esign/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token/soft"
+	"github.com/PoliNetworkOrg/esign/internal/token/worker"
 )
 
-const mainEnv = "SIGN_AGENT_TEST_MAIN"
+const mainEnv = "ESIGN_TEST_MAIN"
 
-// TestMain lets the test binary run as the sign-agent command: tests start it again with mainEnv set.
+// TestMain lets the test binary run as the esign command: tests start it again with mainEnv set.
 func TestMain(m *testing.M) {
 	if os.Getenv(mainEnv) == "1" {
 		main()
@@ -86,12 +86,12 @@ func TestWorkerCommandWithSoftToken(t *testing.T) {
 	}
 }
 
-// TestWorkerWithPKCS11Module signs with a real PKCS#11 module loaded by the worker: set SIGN_AGENT_TEST_PKCS11 and
-// SIGN_AGENT_TEST_PIN as for the p11 tests (scripts/softhsm-tests.sh does).
+// TestWorkerWithPKCS11Module signs with a real PKCS#11 module loaded by the worker: set ESIGN_TEST_PKCS11 and
+// ESIGN_TEST_PIN as for the p11 tests (scripts/softhsm-tests.sh does).
 func TestWorkerWithPKCS11Module(t *testing.T) {
-	module, pin := os.Getenv("SIGN_AGENT_TEST_PKCS11"), os.Getenv("SIGN_AGENT_TEST_PIN")
+	module, pin := os.Getenv("ESIGN_TEST_PKCS11"), os.Getenv("ESIGN_TEST_PIN")
 	if module == "" || pin == "" {
-		t.Skip("SIGN_AGENT_TEST_PKCS11 and SIGN_AGENT_TEST_PIN are not set")
+		t.Skip("ESIGN_TEST_PKCS11 and ESIGN_TEST_PIN are not set")
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -129,9 +129,9 @@ func TestWorkerWithPKCS11Module(t *testing.T) {
 func TestOpenURLIgnoresOtherLinks(t *testing.T) {
 	home := t.TempDir()
 	for _, args := range [][]string{
-		{"open-url", "polinetwork-sign://open/../install"},
-		{"open-url", "polinetwork-sign://open?pkcs11=/tmp/evil.so"},
-		{"open-url", "polinetwork-sign://open", "--pkcs11", "/tmp/evil.so"},
+		{"open-url", "polinetwork-esign://open/../install"},
+		{"open-url", "polinetwork-esign://open?pkcs11=/tmp/evil.so"},
+		{"open-url", "polinetwork-esign://open", "--pkcs11", "/tmp/evil.so"},
 		{"open-url"},
 	} {
 		var stderr bytes.Buffer
@@ -193,7 +193,7 @@ func TestServeAndSecondInstance(t *testing.T) {
 func TestSoftwareCIEHome(t *testing.T) {
 	tests := []struct{ home, want string }{
 		{"/Users/rossi/Library/Containers/it.ipzs.SoftwareCIE/Data", "/Users/rossi/Library"},
-		{"/Users/rossi/Library/Application Support/PoliNetwork Sign Agent/cie-mw-home", "/Users/rossi/Library"},
+		{"/Users/rossi/Library/Application Support/PoliNetwork eSign/cie-mw-home", "/Users/rossi/Library"},
 		{"/Users/rossi", "/Users/rossi"},
 	}
 	for _, tt := range tests {
@@ -201,8 +201,8 @@ func TestSoftwareCIEHome(t *testing.T) {
 			t.Errorf("cardDirPrefix(%q) = %q, want %q", tt.home, got, tt.want)
 		}
 	}
-	h, err := softwareCIEHome("/Users/rossi", "/Users/rossi/Library/Application Support/PoliNetwork Sign Agent")
-	if err != nil || h != "/Users/rossi/Library/Application Support/PoliNetwork Sign Agent/cie-mw-home" {
+	h, err := softwareCIEHome("/Users/rossi", "/Users/rossi/Library/Application Support/PoliNetwork eSign")
+	if err != nil || h != "/Users/rossi/Library/Application Support/PoliNetwork eSign/cie-mw-home" {
 		t.Errorf("softwareCIEHome: %q, %v", h, err)
 	}
 	// A data directory elsewhere falls back to the sandbox HOME the app itself has.
@@ -267,11 +267,11 @@ func TestPKCS11SpecPlans(t *testing.T) {
 }
 
 // TestWorkerPairsCIE runs the official middleware in a worker against the simulated, unpaired card of
-// scripts/interop/run.sh (SIGN_AGENT_TEST_CIEMW is the module): the worker's Open pairs the card through the module.
+// scripts/interop/run.sh (ESIGN_TEST_CIEMW is the module): the worker's Open pairs the card through the module.
 func TestWorkerPairsCIE(t *testing.T) {
-	module, pin := os.Getenv("SIGN_AGENT_TEST_CIEMW"), os.Getenv("SIGN_AGENT_TEST_PIN")
+	module, pin := os.Getenv("ESIGN_TEST_CIEMW"), os.Getenv("ESIGN_TEST_PIN")
 	if module == "" || pin == "" {
-		t.Skip("SIGN_AGENT_TEST_CIEMW and SIGN_AGENT_TEST_PIN are not set")
+		t.Skip("ESIGN_TEST_CIEMW and ESIGN_TEST_PIN are not set")
 	}
 	home, _ := os.UserHomeDir()
 	caches := func() []string {

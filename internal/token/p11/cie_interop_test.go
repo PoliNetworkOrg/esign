@@ -10,25 +10,25 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PoliNetworkOrg/sign-agent/internal/token"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 )
 
 // These tests run a CIE PKCS#11 module against the simulated card of scripts/interop/run.sh (cmd/cie-vcard behind
-// pcsc-lite and vpcd): SIGN_AGENT_TEST_CIEMW is the official middleware, SIGN_AGENT_TEST_OPENCIE is OpenCIE, and
-// SIGN_AGENT_TEST_PIN the card's full PIN. They start unpaired, so Open must pair through the module.
+// pcsc-lite and vpcd): ESIGN_TEST_CIEMW is the official middleware, ESIGN_TEST_OPENCIE is OpenCIE, and
+// ESIGN_TEST_PIN the card's full PIN. They start unpaired, so Open must pair through the module.
 
 func TestOfficialMiddlewareInterop(t *testing.T) {
-	path := os.Getenv("SIGN_AGENT_TEST_CIEMW")
+	path := os.Getenv("ESIGN_TEST_CIEMW")
 	if path == "" {
-		t.Skip("SIGN_AGENT_TEST_CIEMW is not set")
+		t.Skip("ESIGN_TEST_CIEMW is not set")
 	}
 	runModule(t, Options{Name: "cie-mw", Path: path, PIN: LastFour, PINLength: 8, Pair: OfficialPairing()})
 }
 
 func TestOpenCIEInterop(t *testing.T) {
-	path := os.Getenv("SIGN_AGENT_TEST_OPENCIE")
+	path := os.Getenv("ESIGN_TEST_OPENCIE")
 	if path == "" {
-		t.Skip("SIGN_AGENT_TEST_OPENCIE is not set")
+		t.Skip("ESIGN_TEST_OPENCIE is not set")
 	}
 	runModule(t, Options{Name: "opencie", Path: path, PINLength: 8, Pair: OpenCIEPairing()})
 }
@@ -41,9 +41,9 @@ func cacheFiles(t *testing.T) []string {
 }
 
 func runModule(t *testing.T, opts Options) {
-	pin := os.Getenv("SIGN_AGENT_TEST_PIN")
+	pin := os.Getenv("ESIGN_TEST_PIN")
 	if pin == "" {
-		t.Fatal("SIGN_AGENT_TEST_PIN is not set")
+		t.Fatal("ESIGN_TEST_PIN is not set")
 	}
 	for _, f := range cacheFiles(t) {
 		if err := os.Remove(f); err != nil {

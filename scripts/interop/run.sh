@@ -4,7 +4,7 @@
 # Usage: ./scripts/interop/run.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-docker build --platform linux/amd64 -t sign-agent-interop scripts/interop
+docker build --platform linux/amd64 -t esign-interop scripts/interop
 docker run --rm --platform linux/amd64 -v "$PWD":/src \
-	-v sign-agent-gomod-amd64:/go/pkg/mod -v sign-agent-gocache-amd64:/root/.cache/go-build \
-	sign-agent-interop ./scripts/interop/in-container.sh
+	-v esign-gomod-amd64:/go/pkg/mod -v esign-gocache-amd64:/root/.cache/go-build \
+	esign-interop ./scripts/interop/in-container.sh

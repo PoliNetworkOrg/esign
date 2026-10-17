@@ -42,13 +42,18 @@ const (
 	WorkerNever  = "never"
 )
 
-// Dir is the agent's per-user configuration directory.
+// Dir is the agent's per-user configuration directory. Until v0.1.x it was "PoliNetwork Sign Agent": the first call
+// after an update moves that directory, with the configuration and pairing caches, here.
 func Dir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "PoliNetwork Sign Agent"), nil
+	dir := filepath.Join(base, "PoliNetwork eSign")
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+		_ = os.Rename(filepath.Join(base, "PoliNetwork Sign Agent"), dir)
+	}
+	return dir, nil
 }
 
 // Load reads the configuration file, if any, and applies defaults.
