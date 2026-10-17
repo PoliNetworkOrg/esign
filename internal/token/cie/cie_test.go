@@ -201,11 +201,11 @@ func TestPINErrors(t *testing.T) {
 	for _, want := range []int{2, 1, 0} {
 		_, err := p.Open(t.Context(), "00000000")
 		var te *token.Error
-		if token.CodeOf(err) != token.CodePinIncorrect || !asTokenError(err, &te) || te.RetriesLeft != want {
+		if token.CodeOf(err) != token.CodePinIncorrect || !asTokenError(err, &te) || te.RetriesLeft != want || !te.PINSent {
 			t.Fatalf("want %d retries: %v", want, err)
 		}
 	}
-	if _, err := p.Open(t.Context(), "12345678"); token.CodeOf(err) != token.CodePinLocked {
+	if _, err := p.Open(t.Context(), "12345678"); token.CodeOf(err) != token.CodePinLocked || !token.PINSent(err) {
 		t.Fatalf("locked: %v", err)
 	}
 }
@@ -239,7 +239,7 @@ func TestCardRemovedMidSession(t *testing.T) {
 
 func TestNotACIE(t *testing.T) {
 	p := cie.NewWithConnector(&connector{readers: []*reader{{name: "R", card: &otherCard{}}}})
-	if _, err := p.Open(t.Context(), "12345678"); token.CodeOf(err) != token.CodeCardUnsupported {
+	if _, err := p.Open(t.Context(), "12345678"); token.CodeOf(err) != token.CodeCardUnsupported || token.PINSent(err) {
 		t.Fatalf("got %v", err)
 	}
 	if _, err := cie.NewWithConnector(&connector{}).Open(t.Context(), "12345678"); token.CodeOf(err) != token.CodeNoReader {

@@ -187,7 +187,8 @@ func (p *Provider) Open(ctx context.Context, pin string) (token.Session, error) 
 	}
 	res, err := p.roundTrip(ctx, pr, request{Op: opOpen, PIN: pin})
 	if err != nil {
-		return nil, err
+		// The worker had the PIN and may have sent it to the card before failing.
+		return nil, token.AfterPIN(err)
 	}
 	if res.Error != nil {
 		return nil, res.Error.err()
@@ -195,7 +196,7 @@ func (p *Provider) Open(ctx context.Context, pin string) (token.Session, error) 
 	s := &session{p: p, proc: pr}
 	fail := func(err error) (token.Session, error) {
 		_, _ = p.roundTrip(ctx, pr, request{Op: opClose})
-		return nil, err
+		return nil, token.AfterPIN(err)
 	}
 	if s.cert, err = x509.ParseCertificate(res.Certificate); err != nil {
 		return fail(token.Errorf(token.CodeDevice, "worker certificate: %v", err))

@@ -46,6 +46,7 @@ type response struct {
 type wireError struct {
 	Code        token.Code `json:"code"`
 	RetriesLeft int        `json:"retriesLeft"`
+	PINSent     bool       `json:"pinSent,omitempty"`
 	Message     string     `json:"message"`
 }
 
@@ -54,6 +55,7 @@ func toWire(err error) *wireError {
 	var te *token.Error
 	if errors.As(err, &te) {
 		w.RetriesLeft = te.RetriesLeft
+		w.PINSent = te.PINSent
 		if te.Err != nil {
 			w.Message = te.Err.Error()
 		}
@@ -62,7 +64,7 @@ func toWire(err error) *wireError {
 }
 
 func (w *wireError) err() error {
-	return &token.Error{Code: w.Code, RetriesLeft: w.RetriesLeft, Err: errors.New(w.Message)}
+	return &token.Error{Code: w.Code, RetriesLeft: w.RetriesLeft, PINSent: w.PINSent, Err: errors.New(w.Message)}
 }
 
 func writeFrame(w io.Writer, v any) error {

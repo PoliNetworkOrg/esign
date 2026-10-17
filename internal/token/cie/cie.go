@@ -177,8 +177,16 @@ func (p *Provider) Open(_ context.Context, pin string) (token.Session, error) {
 }
 
 // classify maps protocol errors to token errors. Failures before the PIN reached the card mean the card does not
-// behave like a CIE, which lets the agent try another provider.
+// behave like a CIE, which lets the agent try another provider; failures after it are marked token.PINSent.
 func classify(err error, pinSent bool) error {
+	out := classifyCode(err, pinSent)
+	if pinSent {
+		return token.AfterPIN(out)
+	}
+	return out
+}
+
+func classifyCode(err error, pinSent bool) error {
 	var pe *ias.PINError
 	var se *ias.StatusError
 	var proto *ias.ProtocolError

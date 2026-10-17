@@ -36,7 +36,7 @@ func TestPCSCInterop(t *testing.T) {
 	}
 	_, err := p.Open(t.Context(), wrong)
 	var te *token.Error
-	if !asTokenError(err, &te) || te.Code != token.CodePinIncorrect || te.RetriesLeft != 2 {
+	if !asTokenError(err, &te) || te.Code != token.CodePinIncorrect || te.RetriesLeft != 2 || !te.PINSent {
 		t.Fatalf("wrong PIN: %v", err)
 	}
 	t.Logf("wrong PIN: %v (retries left %d)", err, te.RetriesLeft)

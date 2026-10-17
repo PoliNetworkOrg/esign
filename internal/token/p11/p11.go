@@ -214,24 +214,25 @@ func (p *Provider) open(pin string) (*session11, error) {
 	if p.opts.PIN != nil {
 		login = p.opts.PIN(pin)
 	}
+	// From C_Login on, the PIN has reached the module: every failure is marked so that no other provider is tried.
 	if err := ctx.Login(session, pkcs11.CKU_USER, login); err != nil && !isCode(err, pkcs11.CKR_USER_ALREADY_LOGGED_IN) {
 		s.release()
-		return nil, pinError(err)
+		return nil, token.AfterPIN(pinError(err))
 	}
 	s.loggedIn = true
 	certs, err := certificates(ctx, session)
 	if err != nil {
 		s.release()
-		return nil, err
+		return nil, token.AfterPIN(err)
 	}
 	if len(certs) == 0 {
 		s.release()
-		return nil, &unpairedError{err: token.Errorf(token.CodeNotFound, "no signing certificate on the card")}
+		return nil, token.AfterPIN(token.Errorf(token.CodeNotFound, "no signing certificate on the card"))
 	}
 	s.cert = certs[0].cert
 	if s.key, err = privateKey(ctx, session, certs[0].id); err != nil {
 		s.release()
-		return nil, err
+		return nil, token.AfterPIN(err)
 	}
 	return s, nil
 }

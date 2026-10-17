@@ -65,7 +65,7 @@ func runModule(t *testing.T, opts Options) {
 	}
 	_, err := p.Open(t.Context(), wrong)
 	var te *token.Error
-	if !errors.As(err, &te) || te.Code != token.CodePinIncorrect || te.RetriesLeft != 2 {
+	if !errors.As(err, &te) || te.Code != token.CodePinIncorrect || te.RetriesLeft != 2 || !te.PINSent {
 		t.Fatalf("unpaired, wrong PIN: %v", err)
 	}
 	if len(cacheFiles(t)) != 0 {
@@ -99,7 +99,7 @@ func runModule(t *testing.T, opts Options) {
 		wrongEnd = "1111"
 	}
 	_, err = p.Open(t.Context(), pin[:4]+wrongEnd)
-	if token.CodeOf(err) != token.CodePinIncorrect {
+	if token.CodeOf(err) != token.CodePinIncorrect || !token.PINSent(err) {
 		t.Fatalf("paired, wrong PIN: %v", err)
 	}
 	t.Logf("paired, wrong PIN: %v", err)

@@ -48,8 +48,23 @@ func (p *Provider) pairAndOpen(pin string, cause *unpairedError) (*session11, er
 		return nil, notPaired(cause)
 	}
 	if err != nil {
+		// The module was not called.
 		return nil, token.Errorf(token.CodeDevice, "pairing: %v", err)
 	}
+	switch rv {
+	case cardAlreadyEnabled:
+		// Paired already, found before the PIN is used: the failure has another cause.
+		return nil, cause.err
+	case pkcs11.CKR_PIN_LEN_RANGE, pkcs11.CKR_PIN_INVALID:
+		// Checked before the card is touched.
+		return nil, token.Errorf(token.CodePinInvalid, "the module rejected the PIN format while pairing")
+	}
+	// Any other outcome may come after the PIN reached the card.
+	s, err := p.afterPairing(pin, rv, attempts)
+	return s, token.AfterPIN(err)
+}
+
+func (p *Provider) afterPairing(pin string, rv uint, attempts int) (*session11, error) {
 	switch rv {
 	case pkcs11.CKR_OK:
 		s, err := p.open(pin)
@@ -58,9 +73,6 @@ func (p *Provider) pairAndOpen(pin string, cause *unpairedError) (*session11, er
 			return nil, token.Errorf(token.CodeDevice, "the card was paired but the module still cannot use it: %v", again.err)
 		}
 		return s, err
-	case cardAlreadyEnabled:
-		// Paired already: the failure has another cause.
-		return nil, cause.err
 	case pkcs11.CKR_PIN_INCORRECT:
 		left := -1
 		if attempts >= 0 && attempts <= 15 {
@@ -69,8 +81,6 @@ func (p *Provider) pairAndOpen(pin string, cause *unpairedError) (*session11, er
 		return nil, &token.Error{Code: token.CodePinIncorrect, RetriesLeft: left, Err: errors.New("wrong PIN while pairing the card")}
 	case pkcs11.CKR_PIN_LOCKED:
 		return nil, token.Errorf(token.CodePinLocked, "PIN blocked while pairing the card")
-	case pkcs11.CKR_PIN_LEN_RANGE, pkcs11.CKR_PIN_INVALID:
-		return nil, token.Errorf(token.CodePinInvalid, "the module rejected the PIN format while pairing")
 	case pkcs11.CKR_TOKEN_NOT_PRESENT:
 		return nil, token.Errorf(token.CodeNoCard, "no card to pair")
 	case pkcs11.CKR_TOKEN_NOT_RECOGNIZED:

@@ -281,7 +281,8 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
-// fallbackCodes are failures before any PIN reached a card: the next provider may still work.
+// fallbackCodes are failures that a provider reports before any PIN reached a card: the next provider may still
+// work. An error marked token.PINSent never falls back, whatever its code.
 var fallbackCodes = map[token.Code]bool{
 	token.CodeNoReader:          true,
 	token.CodeNoCard:            true,
@@ -290,7 +291,8 @@ var fallbackCodes = map[token.Code]bool{
 	token.CodeCardUnsupported:   true,
 }
 
-// open authenticates with the first provider that sees a card, falling back only before a PIN was sent.
+// open authenticates with the first provider that sees a card, falling back only when the provider says no PIN was
+// sent: a PIN that reached a module or card may have used an attempt, and must not be tried again elsewhere.
 func (s *Server) open(ctx context.Context, pin string) (token.Session, token.Provider, error) {
 	var firstErr error
 	for _, p := range s.opts.Providers {
@@ -303,7 +305,7 @@ func (s *Server) open(ctx context.Context, pin string) (token.Session, token.Pro
 			return session, p, nil
 		}
 		s.opts.Logger.Warn("open card session", "provider", p.Name(), "code", token.CodeOf(err), "error", err)
-		if !fallbackCodes[token.CodeOf(err)] {
+		if token.PINSent(err) || !fallbackCodes[token.CodeOf(err)] {
 			return nil, p, err
 		}
 		if firstErr == nil {
