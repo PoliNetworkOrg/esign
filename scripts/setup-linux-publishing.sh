@@ -25,7 +25,7 @@ repository)
 	if [ ! -d "$home" ]; then
 		mkdir -p "$home" && chmod 700 "$home"
 		gpg --homedir "$home" --batch --passphrase '' \
-			--quick-gen-key "PoliNetwork eSign packages <admin@polinetwork.org>" rsa4096 sign never
+			--quick-gen-key "PoliNetwork eSign packages <it@polinetwork.org>" rsa4096 sign never
 	fi
 	gpg --homedir "$home" --armor --export > packaging/linux/repository-key.asc
 	gpg --homedir "$home" --armor --export-secret-keys | gh secret set LINUX_REPOSITORY_GPG_KEY --repo "$repo"

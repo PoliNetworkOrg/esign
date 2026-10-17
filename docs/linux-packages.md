@@ -52,7 +52,7 @@ have updated.
 ### AUR
 
 1. Create an account at <https://aur.archlinux.org/register> for PoliNetwork (for example with
-   `admin@polinetwork.org`).
+   `it@polinetwork.org`).
 2. Run
 
    ```sh

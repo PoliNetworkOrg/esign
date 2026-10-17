@@ -131,5 +131,5 @@ jobs:
           cd aur
           git add PKGBUILD .SRCINFO polinetwork-esign.install
           if git diff --cached --quiet; then echo "The AUR already has $TAG"; exit 0; fi
-          git -c user.name="PoliNetwork APS" -c user.email=admin@polinetwork.org commit -m "Update to ${TAG#v}"
+          git -c user.name="PoliNetwork APS" -c user.email=it@polinetwork.org commit -m "Update to ${TAG#v}"
           git push origin HEAD:master

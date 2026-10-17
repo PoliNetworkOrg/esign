@@ -9,7 +9,7 @@ version_schema: none
 release: "1"
 section: utils
 priority: optional
-maintainer: PoliNetwork APS <admin@polinetwork.org>
+maintainer: PoliNetwork APS <it@polinetwork.org>
 description: |-
   Signs PDFs with the Italian electronic identity card (CIE) for the PoliNetwork dashboard.
   The dashboard opens the agent's page on 127.0.0.1:47321; the PIN goes only to the card.
@@ -40,7 +40,7 @@ scripts:
   postinstall: packaging/linux/postinstall.sh
   preremove: packaging/linux/preremove.sh
 archlinux:
-  packager: PoliNetwork APS <admin@polinetwork.org>
+  packager: PoliNetwork APS <it@polinetwork.org>
   scripts:
     postupgrade: packaging/linux/postinstall.sh
 contents:

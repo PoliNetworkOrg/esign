@@ -24,7 +24,7 @@ csr)
 		chmod 600 "$key"
 	fi
 	openssl req -new -key "$key" -out "$dir/developer-id.certSigningRequest" \
-		-subj "/emailAddress=admin@polinetwork.org/CN=PoliNetwork APS/C=IT"
+		-subj "/emailAddress=it@polinetwork.org/CN=PoliNetwork APS/C=IT"
 	echo "Certificate signing request: $dir/developer-id.certSigningRequest"
 	echo "Upload it at https://developer.apple.com/account/resources/certificates/add (Developer ID > Developer ID Application, G2)."
 	;;
