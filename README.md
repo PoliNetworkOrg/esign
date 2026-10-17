@@ -118,6 +118,11 @@ In the dashboard, open a document and choose **Sign with CIE**. A small window f
 the card on the reader until it says the document is signed. If the dashboard says the agent is not running, use its
 **Start the agent** link (or open the app again).
 
+You type the PIN once even when there is more to sign: a document where you sign in several places (each place is a
+separate signature), or up to 10 documents that the dashboard sends together. The window lists them, signs them one
+after the other, and shows which were signed. If the dashboard refuses one document (for example because it changed),
+the others are still signed; if the card stops answering, the rest are left unsigned and you can try again.
+
 A wrong PIN uses one of the card's three attempts; the agent never retries a PIN by itself. After three wrong PINs the
 card is blocked: unblock it with the PUK in the CIE software.
 
@@ -227,6 +232,21 @@ certificate that the reference builds against an RSA modulus generated for the r
 exponent, since the real root modulus exists only on cards; and its document security object is signed by a test Document Signer under a test CSCA:
 the official code accepts it because it checks the SOD signature but not the signer's chain, while the agent's `cie`
 provider accepts it only when a test hands it that CSCA.
+
+### How signing works
+
+The dashboard opens `/sign?origin=<dashboard>&ticket=<t1>&ticket=<t2>…`, one single-use ticket per document (1 to 10;
+repeats are dropped). The page talks only to the agent:
+
+- `POST /api/job` `{tickets, origin}` returns `{jobs: [{ticket, job} | {ticket, error}]}`;
+- `POST /api/sign` `{tickets, origin, pin}` opens one card session and, for each job in order, repeats
+  `prepare` (with `protocol: 2`), card signature and `complete` until the backend answers `completed`. It returns
+  `{results: [{ticket, status: completed | failed | skipped, error?}], signer}`. If the session does not open (wrong
+  PIN, no card) it returns that error and reports it on every job;
+- `POST /api/cancel` `{tickets, origin}` reports the jobs as cancelled.
+
+The agent calls the dashboard's `/api/esign/agent/jobs/{ticket}[/prepare|/complete|/fail]` with each ticket. A backend
+older than protocol 2 sends no steps, and its jobs are signed once.
 
 Builds:
 

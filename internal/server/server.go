@@ -1,6 +1,7 @@
 // Package server is the agent's loopback web app. The dashboard opens its /sign page in a popup (a top-level
-// navigation, which browsers allow from HTTPS pages, unlike fetches to loopback). The page takes the PIN and the agent
-// signs, talking to the dashboard's backend with the job's single-use ticket. The dashboard never reaches the agent.
+// navigation, which browsers allow from HTTPS pages, unlike fetches to loopback). The page takes the PIN once and the
+// agent signs one or more jobs, talking to the dashboard's backend with each job's single-use ticket. The dashboard
+// never reaches the agent.
 package server
 
 import (
@@ -10,6 +11,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -49,7 +51,7 @@ type Options struct {
 // Backend is the part of the dashboard's API the agent uses.
 type Backend interface {
 	Job(ctx context.Context, ticket string) (*backend.Job, error)
-	Prepare(ctx context.Context, ticket string, certificate []byte, chain [][]byte) ([]byte, error)
+	Prepare(ctx context.Context, ticket string, certificate []byte, chain [][]byte) (*backend.Prepared, error)
 	Complete(ctx context.Context, ticket string, signature []byte) (*backend.Completion, error)
 	Fail(ctx context.Context, ticket, code, message string) error
 }
@@ -95,8 +97,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		// Signing waits for the card and two backend round trips.
-		WriteTimeout:   150 * time.Second,
+		// Signing waits for the card and two backend round trips per signature, up to signTimeout's cap.
+		WriteTimeout:   16 * time.Minute,
 		MaxHeaderBytes: 16 << 10,
 	}
 	errc := make(chan error, 1)
@@ -227,21 +229,39 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.statuses(ctx))
 }
 
+// MaxTickets is how many documents the page can sign with one PIN.
+const MaxTickets = 10
+
 type jobRequest struct {
-	Ticket string `json:"ticket"`
-	Origin string `json:"origin"`
-	PIN    string `json:"pin,omitempty"`
+	Tickets []string `json:"tickets"`
+	Origin  string   `json:"origin"`
+	PIN     string   `json:"pin,omitempty"`
 }
 
-// decode reads a job request and checks the ticket and origin.
+// apiError is the error of one ticket in a response.
+type apiError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// decode reads a job request, drops repeated tickets and checks the tickets and origin.
 func (s *Server) decode(w http.ResponseWriter, r *http.Request) (*jobRequest, Backend, bool) {
 	var req jobRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "Malformed request")
 		return nil, nil, false
 	}
-	if !backend.TicketPattern.MatchString(req.Ticket) {
+	req.Tickets = uniqueTickets(req.Tickets)
+	valid := len(req.Tickets) > 0
+	for _, t := range req.Tickets {
+		valid = valid && backend.TicketPattern.MatchString(t)
+	}
+	if !valid {
 		writeError(w, http.StatusBadRequest, "ticket_invalid", "This signing link is not valid. Start again from the dashboard.")
+		return nil, nil, false
+	}
+	if len(req.Tickets) > MaxTickets {
+		writeError(w, http.StatusBadRequest, "too_many_tickets", "Sign at most "+strconv.Itoa(MaxTickets)+" documents at a time. Start again from the dashboard.")
 		return nil, nil, false
 	}
 	if !OriginAllowed(s.opts.AllowedOrigins, req.Origin) {
@@ -252,6 +272,44 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) (*jobRequest, Ba
 	return &req, s.opts.Backend(req.Origin), true
 }
 
+// uniqueTickets returns tickets without repeats, in their order.
+func uniqueTickets(tickets []string) []string {
+	seen := make(map[string]bool, len(tickets))
+	var out []string
+	for _, t := range tickets {
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+type jobResult struct {
+	Ticket string       `json:"ticket"`
+	Job    *backend.Job `json:"job,omitempty"`
+	Error  *apiError    `json:"error,omitempty"`
+}
+
+// fetchJobs fetches the jobs in parallel. A ticket that fails gets its error, the others are unaffected.
+func fetchJobs(ctx context.Context, be Backend, tickets []string) []jobResult {
+	res := make([]jobResult, len(tickets))
+	var wg sync.WaitGroup
+	for i, t := range tickets {
+		wg.Go(func() {
+			res[i].Ticket = t
+			job, err := be.Job(ctx, t)
+			if err != nil {
+				res[i].Error = backendError(err)
+				return
+			}
+			res[i].Job = job
+		})
+	}
+	wg.Wait()
+	return res
+}
+
 func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 	req, be, ok := s.decode(w, r)
 	if !ok {
@@ -259,12 +317,7 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	job, err := be.Job(ctx, req.Ticket)
-	if err != nil {
-		writeBackendError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"job": job})
+	writeJSON(w, http.StatusOK, map[string]any{"jobs": fetchJobs(ctx, be, req.Tickets)})
 }
 
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
@@ -274,10 +327,15 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	if err := be.Fail(ctx, req.Ticket, "cancelled", "Cancelled in the agent"); err != nil {
-		writeBackendError(w, err)
-		return
+	var wg sync.WaitGroup
+	for _, t := range req.Tickets {
+		wg.Go(func() {
+			if err := be.Fail(ctx, t, "cancelled", "Cancelled in the agent"); err != nil {
+				s.opts.Logger.Warn("cancel job", "error", err)
+			}
+		})
 	}
+	wg.Wait()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
@@ -318,6 +376,21 @@ func (s *Server) open(ctx context.Context, pin string) (token.Session, token.Pro
 	return nil, nil, firstErr
 }
 
+// signResult is what happened to one ticket: "completed", "failed" or "skipped" (not tried after a card error).
+type signResult struct {
+	Ticket string    `json:"ticket"`
+	Status string    `json:"status"`
+	Error  *apiError `json:"error,omitempty"`
+}
+
+// signTimeout is the time a request may take: a minute to open the card, then 30 seconds per signature, at most
+// 15 minutes. The server's WriteTimeout must cover the cap.
+func signTimeout(signatures int) time.Duration {
+	return min(time.Minute+time.Duration(signatures)*30*time.Second, 15*time.Minute)
+}
+
+// sign opens one card session with the PIN and signs every job in order. A backend error ends only its job; a card
+// error ends the session, and the jobs after it are skipped.
 func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 	req, be, ok := s.decode(w, r)
 	if !ok {
@@ -332,47 +405,131 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.card.Unlock()
-	ctx, cancel := context.WithTimeout(r.Context(), 140*time.Second)
-	defer cancel()
-	started := time.Now()
 
+	// The jobs say how many signatures to expect. One that cannot be fetched (it ended meanwhile) is not signed.
+	fetchCtx, cancelFetch := context.WithTimeout(r.Context(), 20*time.Second)
+	jobs := fetchJobs(fetchCtx, be, req.Tickets)
+	cancelFetch()
+	results := make([]signResult, len(jobs))
+	var todo []int
+	signatures := 0
+	for i, j := range jobs {
+		if j.Error != nil {
+			results[i] = signResult{Ticket: j.Ticket, Status: "failed", Error: j.Error}
+			continue
+		}
+		results[i] = signResult{Ticket: j.Ticket, Status: "skipped"}
+		todo = append(todo, i)
+		signatures += max(j.Job.Signatures, 1)
+	}
+	if len(todo) == 0 {
+		req.PIN = ""
+		writeJSON(w, http.StatusOK, map[string]any{"results": results})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), signTimeout(signatures))
+	defer cancel()
 	session, provider, err := s.open(ctx, req.PIN)
 	req.PIN = ""
 	if err != nil {
-		_ = be.Fail(context.WithoutCancel(ctx), req.Ticket, string(token.CodeOf(err)), messageOf[token.CodeOf(err)])
+		code := token.CodeOf(err)
+		for _, i := range todo {
+			s.fail(ctx, be, jobs[i].Ticket, string(code), messageOf[code])
+		}
 		writeTokenError(w, err)
 		return
 	}
 	defer session.Close()
-	cert := session.Certificate()
 	var chain [][]byte
 	for _, c := range session.Chain() {
 		chain = append(chain, c.Raw)
 	}
-	digest, err := be.Prepare(ctx, req.Ticket, cert.Raw, chain)
-	if err != nil {
-		writeBackendError(w, err)
-		return
+	info := certinfo.Parse(session.Certificate())
+
+	// stop is the card error that ended the session: the remaining jobs get it too.
+	var stop *apiError
+	for _, i := range todo {
+		ticket, job := jobs[i].Ticket, jobs[i].Job
+		if stop != nil {
+			results[i].Error = stop
+			s.fail(ctx, be, ticket, stop.Code, stop.Message)
+			continue
+		}
+		started := time.Now()
+		n, err := signJob(ctx, be, session, chain, ticket)
+		if err == nil {
+			results[i].Status = "completed"
+			s.opts.Logger.Info("signed", "provider", provider.Name(), "signer", info.DisplayName, "job", job.ID, "signatures", n, "duration", time.Since(started).Round(time.Millisecond))
+			continue
+		}
+		e, card := describe(err)
+		s.opts.Logger.Warn("sign job", "provider", provider.Name(), "job", job.ID, "signatures", n, "code", e.Code, "error", err)
+		results[i] = signResult{Ticket: ticket, Status: "failed", Error: e}
+		s.fail(ctx, be, ticket, e.Code, e.Message)
+		if card || ctx.Err() != nil {
+			stop = e
+		}
 	}
-	signature, err := session.SignDigest(ctx, digest)
-	if err != nil {
-		_ = be.Fail(context.WithoutCancel(ctx), req.Ticket, string(token.CodeOf(err)), messageOf[token.CodeOf(err)])
-		writeTokenError(w, err)
-		return
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "signer": info})
+}
+
+// cardError is a failure of the card session, which is not used again after it.
+type cardError struct{ error }
+
+func (e cardError) Unwrap() error { return e.error }
+
+// signJob adds the job's signatures one at a time (prepare, sign with the card, complete) until the backend says
+// the job is complete, and returns how many it added.
+func signJob(ctx context.Context, be Backend, session token.Session, chain [][]byte, ticket string) (int, error) {
+	cert := session.Certificate()
+	steps := 0
+	for n := 0; ; n++ {
+		p, err := be.Prepare(ctx, ticket, cert.Raw, chain)
+		if err != nil {
+			return n, err
+		}
+		if n == 0 {
+			steps = p.Steps
+		}
+		// The card signs only as many digests as the backend announced at the start.
+		if n >= steps {
+			return n, fmt.Errorf("the server asked for signature %d of %d", n+1, steps)
+		}
+		signature, err := session.SignDigest(ctx, p.Digest)
+		if err != nil {
+			return n, cardError{err}
+		}
+		if pub, ok := cert.PublicKey.(*rsa.PublicKey); !ok || rsa.VerifyPKCS1v15(pub, crypto.SHA256, p.Digest, signature) != nil {
+			return n, cardError{token.Errorf(token.CodeDevice, "the card returned a signature that does not verify")}
+		}
+		done, err := be.Complete(ctx, ticket, signature)
+		if err != nil {
+			return n, err
+		}
+		if done.Status == "completed" {
+			return n + 1, nil
+		}
 	}
-	if pub, ok := cert.PublicKey.(*rsa.PublicKey); !ok || rsa.VerifyPKCS1v15(pub, crypto.SHA256, digest, signature) != nil {
-		_ = be.Fail(context.WithoutCancel(ctx), req.Ticket, string(token.CodeDevice), "The card returned an invalid signature")
-		writeTokenError(w, token.Errorf(token.CodeDevice, "the card returned a signature that does not verify"))
-		return
+}
+
+// describe turns a signJob error into the job's result error, and reports whether the card failed.
+func describe(err error) (*apiError, bool) {
+	var ce cardError
+	if errors.As(err, &ce) {
+		code := token.CodeOf(err)
+		return &apiError{Code: string(code), Message: messageOf[code]}, true
 	}
-	done, err := be.Complete(ctx, req.Ticket, signature)
-	if err != nil {
-		writeBackendError(w, err)
-		return
+	return backendError(err), false
+}
+
+// fail tells the backend why a job was not signed, so the dashboard can show it. Its own failure is only logged.
+func (s *Server) fail(ctx context.Context, be Backend, ticket, code, message string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := be.Fail(ctx, ticket, code, message); err != nil {
+		s.opts.Logger.Warn("report failure", "code", code, "error", err)
 	}
-	info := certinfo.Parse(cert)
-	s.opts.Logger.Info("signed", "provider", provider.Name(), "signer", info.DisplayName, "duration", time.Since(started).Round(time.Millisecond))
-	writeJSON(w, http.StatusOK, map[string]any{"status": "completed", "signer": info, "request": done.Request})
 }
 
 var statusOf = map[token.Code]int{
@@ -420,17 +577,13 @@ func writeTokenError(w http.ResponseWriter, err error) {
 	writeJSON(w, status, map[string]any{"error": body})
 }
 
-func writeBackendError(w http.ResponseWriter, err error) {
+// backendError is the error to show for a failed backend call.
+func backendError(err error) *apiError {
 	var be *backend.Error
 	if errors.As(err, &be) {
-		status := be.Status
-		if status < 400 {
-			status = http.StatusBadGateway
-		}
-		writeError(w, status, be.Code, be.Message)
-		return
+		return &apiError{Code: be.Code, Message: be.Message}
 	}
-	writeError(w, http.StatusBadGateway, "backend_unreachable", "Cannot reach the dashboard. Check your connection and try again.")
+	return &apiError{Code: "backend_unreachable", Message: "Cannot reach the dashboard. Check your connection and try again."}
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

@@ -1,4 +1,4 @@
-// Package backend calls the dashboard's signing endpoints for one job, authenticated by its single-use ticket.
+// Package backend calls the dashboard's signing endpoints for a job, authenticated by its single-use ticket.
 package backend
 
 import (
@@ -36,10 +36,27 @@ type Job struct {
 		Page int `json:"page"`
 	} `json:"placement"`
 	RequestedBy string `json:"requestedBy,omitempty"`
+	// Signatures is how many signatures this signer still has to add: one per place, each a separate PDF revision.
+	Signatures int `json:"signatures"`
+	// Marks is how many extra copies of the first signature's appearance it draws elsewhere in the document.
+	Marks int `json:"marks"`
+	// Pages are the 0-based pages with this signer's boxes, ascending.
+	Pages []int `json:"pages"`
+}
+
+// Protocol is the agent protocol version sent with prepare: 2 signs several places, one digest per step.
+const Protocol = 2
+
+// Prepared is a digest to sign, step Step (0-based) of the job's Steps remaining signatures.
+type Prepared struct {
+	Digest []byte
+	Step   int
+	Steps  int
 }
 
 // Completion is the backend's answer to a completed signature.
 type Completion struct {
+	// Status is "next" when the job needs another signature (prepare again) or "completed".
 	Status  string `json:"status"`
 	Request struct {
 		Status    string `json:"status"`
@@ -141,9 +158,9 @@ func (c *Client) Job(ctx context.Context, ticket string) (*Job, error) {
 	return res.Job, nil
 }
 
-// Prepare sends the signer's certificate and returns the SHA-256 digest to sign.
-func (c *Client) Prepare(ctx context.Context, ticket string, certificate []byte, chain [][]byte) ([]byte, error) {
-	body := map[string]any{"certificate": base64.StdEncoding.EncodeToString(certificate)}
+// Prepare sends the signer's certificate and returns the SHA-256 digest of the job's next signature.
+func (c *Client) Prepare(ctx context.Context, ticket string, certificate []byte, chain [][]byte) (*Prepared, error) {
+	body := map[string]any{"certificate": base64.StdEncoding.EncodeToString(certificate), "protocol": Protocol}
 	if len(chain) > 0 {
 		encoded := make([]string, len(chain))
 		for i, c := range chain {
@@ -154,6 +171,8 @@ func (c *Client) Prepare(ctx context.Context, ticket string, certificate []byte,
 	var res struct {
 		ToBeSigned string `json:"toBeSigned"`
 		Algorithm  string `json:"algorithm"`
+		Step       int    `json:"step"`
+		Steps      int    `json:"steps"`
 	}
 	if err := c.do(ctx, http.MethodPost, c.url(ticket, "prepare"), body, &res); err != nil {
 		return nil, err
@@ -165,15 +184,25 @@ func (c *Client) Prepare(ctx context.Context, ticket string, certificate []byte,
 	if err != nil || len(digest) != 32 {
 		return nil, errors.New("malformed digest from the server")
 	}
-	return digest, nil
+	// A backend older than protocol 2 sends no steps: its jobs have one signature.
+	if res.Steps == 0 && res.Step == 0 {
+		res.Steps = 1
+	}
+	if res.Step < 0 || res.Step >= res.Steps {
+		return nil, fmt.Errorf("malformed step %d of %d from the server", res.Step, res.Steps)
+	}
+	return &Prepared{Digest: digest, Step: res.Step, Steps: res.Steps}, nil
 }
 
-// Complete sends the signature.
+// Complete sends the signature. On "next" the job needs another prepare and signature.
 func (c *Client) Complete(ctx context.Context, ticket string, signature []byte) (*Completion, error) {
 	var res Completion
 	err := c.do(ctx, http.MethodPost, c.url(ticket, "complete"), map[string]string{"signature": base64.StdEncoding.EncodeToString(signature)}, &res)
 	if err != nil {
 		return nil, err
+	}
+	if res.Status != "next" && res.Status != "completed" {
+		return nil, fmt.Errorf("unexpected status %q from the server", res.Status)
 	}
 	return &res, nil
 }

@@ -17,23 +17,26 @@
 
     <main>
       <section id="loading" class="panel">
-        <p class="muted">Loading the document…</p>
+        <p id="loading-text" class="muted">Loading the document…</p>
       </section>
 
       <section id="fatal" class="panel" hidden>
         <h1>Cannot sign</h1>
         <p id="fatal-message" class="muted"></p>
+        <ul id="fatal-docs" class="docs" hidden></ul>
         <p class="muted">Close this window and start again from the dashboard.</p>
         <button type="button" class="secondary" data-close>Close</button>
       </section>
 
       <form id="form" class="panel" hidden autocomplete="off">
-        <h1 id="doc-title"></h1>
-        <dl class="facts">
+        <h1 id="heading"></h1>
+        <dl id="facts" class="facts" hidden>
           <div><dt>File</dt><dd id="doc-file"></dd></div>
           <div><dt>Signature</dt><dd id="doc-place"></dd></div>
+          <div id="doc-requester-row"><dt>Requested by</dt><dd id="doc-requester"></dd></div>
           <div><dt>Signing as</dt><dd id="doc-signer"></dd></div>
         </dl>
+        <ul id="docs" class="docs" hidden tabindex="0" aria-label="Documents to sign"></ul>
 
         <div id="card" class="card-status" data-state="unknown" role="status" aria-live="polite">
           <span class="dot" aria-hidden="true"></span>
@@ -66,15 +69,19 @@
 
       <section id="working" class="panel" hidden aria-live="polite">
         <div class="spinner" aria-hidden="true"></div>
-        <h1>Signing…</h1>
+        <h1 id="working-title">Signing…</h1>
         <p class="muted">Keep the CIE still on the reader until this finishes.</p>
       </section>
 
       <section id="done" class="panel" hidden aria-live="polite">
-        <div class="check" aria-hidden="true">✓</div>
-        <h1>Signed</h1>
+        <div id="done-icon" class="check" aria-hidden="true">✓</div>
+        <h1 id="done-title" tabindex="-1">Signed</h1>
+        <ul id="results" class="docs" hidden tabindex="0" aria-label="Results"></ul>
         <p id="done-message" class="muted"></p>
-        <button type="button" class="secondary" data-close>Close</button>
+        <div class="actions center">
+          <button type="button" class="secondary" data-close>Close</button>
+          <button type="button" id="retry" hidden>Try again</button>
+        </div>
       </section>
     </main>
   </body>
