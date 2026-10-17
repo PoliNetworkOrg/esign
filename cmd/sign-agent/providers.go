@@ -155,12 +155,18 @@ func pkcs11Spec(cfg config.Config, dir, name, override string, candidates []stri
 		}
 	}
 
-	if spec.ArchsErr != nil {
+	assumed := spec.ArchsErr != nil
+	switch {
+	case assumed && needsEnv:
+		// macOS can refuse to let the agent read Software CIE's group container until the user allows it: the
+		// published module is x86_64 only.
+		spec.Archs = []string{"amd64"}
+	case assumed:
 		// Unreadable here, so unloadable too: let the provider report why.
 		spec.Archs = []string{runtime.GOARCH}
 	}
 	spec.Plan, spec.PlanErr = worker.Choose(runtime.GOOS, runtime.GOARCH, spec.Archs, selfArchs, cfg.Worker == config.WorkerAlways || needsEnv)
-	if spec.ArchsErr != nil {
+	if assumed {
 		spec.Archs = nil
 	}
 	if spec.PlanErr == nil && cfg.Worker == config.WorkerNever && spec.Plan.Worker {
