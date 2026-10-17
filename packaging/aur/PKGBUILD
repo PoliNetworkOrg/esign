@@ -1,4 +1,4 @@
-# Maintainer: PoliNetwork APS <admin@polinetwork.org>
+# Maintainer: PoliNetwork APS <it@polinetwork.org>
 # Published to the AUR by .github/workflows/release.yml from github.com/PoliNetworkOrg/esign (packaging/aur), which
 # sets pkgver and the checksums and adds polinetwork-esign.install, the release package's install script.
 pkgname=polinetwork-esign-bin
