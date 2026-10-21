@@ -53,6 +53,9 @@ type Options struct {
 	RememberFor time.Duration
 	// CardWatch is how often the card is checked while a PIN is remembered; 2 seconds when zero.
 	CardWatch time.Duration
+	// CardWait is how long a signature waits for the card while a status check or the card watcher holds it;
+	// 3 seconds when zero.
+	CardWait time.Duration
 }
 
 // Backend is the part of the dashboard's API the agent uses.
@@ -67,7 +70,7 @@ type Backend interface {
 type Server struct {
 	opts Options
 	// card serializes signatures: one card, one operation at a time.
-	card   sync.Mutex
+	card   cardLock
 	static http.Handler
 
 	// memMu guards mem, the PIN the user chose to remember (see remember.go). Lock it after card, never before.
@@ -90,8 +93,42 @@ func New(opts Options) *Server {
 	if opts.CardWatch <= 0 {
 		opts.CardWatch = defaultCardWatch
 	}
+	if opts.CardWait <= 0 {
+		opts.CardWait = defaultCardWait
+	}
 	sub, _ := fs.Sub(webFS, "web")
-	return &Server{opts: opts, static: http.FileServerFS(sub)}
+	return &Server{opts: opts, card: make(cardLock, 1), static: http.FileServerFS(sub)}
+}
+
+// defaultCardWait outlasts a status check, which the status pages make every 1.5 seconds.
+const defaultCardWait = 3 * time.Second
+
+// cardLock is a mutex that a signature can wait for with a deadline.
+type cardLock chan struct{}
+
+func (l cardLock) Unlock() { <-l }
+
+func (l cardLock) TryLock() bool {
+	select {
+	case l <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// LockWithin waits for the lock until d passes or ctx ends, and reports whether it got it.
+func (l cardLock) LockWithin(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case l <- struct{}{}:
+		return true
+	case <-timer.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // Handler returns the HTTP handler.
@@ -256,7 +293,8 @@ func (s *Server) statuses(ctx context.Context) statusResponse {
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	// While a signature runs the card is busy: report it rather than queueing behind it.
+	// While a signature runs the card is busy: report it rather than queueing behind it. A signature arriving
+	// meanwhile waits for this check (Options.CardWait).
 	if !s.card.TryLock() {
 		writeJSON(w, http.StatusOK, map[string]any{"busy": true})
 		return
@@ -452,22 +490,25 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if req.PIN != "" && !token.ValidPIN(req.PIN, 8) {
+		writeTokenError(w, token.Errorf(token.CodePinInvalid, "malformed PIN"))
+		return
+	}
+	// A status check or the card watcher holds the card only briefly: wait for it rather than refusing the PIN.
+	if !s.card.LockWithin(r.Context(), s.opts.CardWait) {
+		writeError(w, http.StatusConflict, string(token.CodeBusy), "Another signature is in progress.")
+		return
+	}
+	defer s.card.Unlock()
 	var mem *remembered
 	if req.PIN == "" {
+		// Recalled with the card held, after any check of the watcher that found the card gone.
 		if mem, req.PIN = s.recall(r); mem == nil {
 			clearRememberCookie(w)
 			writeError(w, http.StatusUnauthorized, codePINRequired, "Type your CIE PIN.")
 			return
 		}
-	} else if !token.ValidPIN(req.PIN, 8) {
-		writeTokenError(w, token.Errorf(token.CodePinInvalid, "malformed PIN"))
-		return
 	}
-	if !s.card.TryLock() {
-		writeError(w, http.StatusConflict, string(token.CodeBusy), "Another signature is in progress.")
-		return
-	}
-	defer s.card.Unlock()
 
 	// The jobs say how many signatures to expect. One that cannot be fetched (it ended meanwhile) is not signed.
 	fetchCtx, cancelFetch := context.WithTimeout(r.Context(), 20*time.Second)

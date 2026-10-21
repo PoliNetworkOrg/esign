@@ -240,7 +240,10 @@ func TestRememberedPINOtherCard(t *testing.T) {
 func TestRememberedPINError(t *testing.T) {
 	s, _, r := rememberServer(t, time.Minute)
 	cookie := rememberPIN(t, s)
-	s.card.Lock() // keeps the watcher from noticing the removal first
+	// Holding the card keeps the watcher from noticing the removal first.
+	if !s.card.LockWithin(context.Background(), time.Second) {
+		t.Fatal("the card stayed busy")
+	}
 	r.present.Store(false)
 	s.card.Unlock()
 	rec := signWith(t, s, jobRequest{}, cookie)

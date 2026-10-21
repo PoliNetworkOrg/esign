@@ -1,7 +1,7 @@
 "use strict"
 
 // The home page shows whether this computer is ready to sign. It polls only while visible: a status call holds the
-// card, and a signature arriving meanwhile is refused as busy.
+// card, and a signature arriving meanwhile waits for it.
 
 const $ = (id) => document.getElementById(id)
 let timer = 0
