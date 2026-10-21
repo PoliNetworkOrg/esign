@@ -223,7 +223,7 @@ h1 {
    "unknown" stay neutral. Two lines high in every state, so the form below never moves when it changes. */
 .card-step {
   display: grid;
-  grid-template-columns: 22px 1fr;
+  grid-template-columns: 22px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   min-height: 62px;
@@ -261,6 +261,7 @@ h1 {
 
 .card-text {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   margin: 0;
   line-height: 20px;
 }
@@ -269,9 +270,12 @@ h1 {
   font-weight: 600;
 }
 
+/* One line, so that a long reader name ("ACS ACR1252 Dual Reader [ACR1252 Dual Reader PICC] 00 00") keeps the height. */
 .card-text span {
+  overflow: hidden;
   font-size: 13px;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .card-step[data-state="step"] {

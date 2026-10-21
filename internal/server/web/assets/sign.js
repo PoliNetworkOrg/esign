@@ -398,26 +398,52 @@ async function pollStatus() {
   try {
     status = await api("/api/status")
   } catch (error) {
-    // Signing would fail and say so: the PIN is not held back for it.
-    if (error.code === "agent_unreachable" && ++unanswered >= 3)
-      setCard("unknown", { state: "problem", title: "PoliNetwork eSign stopped answering", detail: "Start it again." })
+    // Whatever stops the agent from answering, signing would fail and say so: the PIN is not held back for it.
+    if (++unanswered >= 3)
+      setCard(
+        "unknown",
+        error.code === "agent_unreachable"
+          ? { state: "problem", title: "PoliNetwork eSign stopped answering", detail: "Start it again." }
+          : { state: "unknown", title: "Place your CIE on the reader", detail: "" },
+      )
     return
   }
   unanswered = 0
   if (status.busy) return
   setRemembered(status.remembered)
+  // A card moving on the reader can drop out of one answer: only a second one in a row means that it was taken away.
+  if (status.card === "absent" && card === "present" && ++missing < REMOVED_AFTER) return
   setCard(status.card, cardView(status))
+}
+
+/**
+ * Asks the agent about the card at once, and believes an answer without the card the first time: the signer is about
+ * to send the PIN, or the agent just said that the card is not there. Returns whether the PIN may go.
+ */
+async function checkCard() {
+  try {
+    const status = await api("/api/status")
+    if (!status.busy) {
+      setRemembered(status.remembered)
+      setCard(status.card, cardView(status))
+    }
+  } catch {
+    // The polls go on, and decide after a few failures.
+  }
+  return cardReady()
 }
 
 /** What the card block says for a status: its state ("step" is the signer's next move), title and detail. */
 function cardView(status) {
   const { reader, software } = describeStatus(status)
   const where = reader?.name || ""
-  if (status.card === "present") return { state: "ready", title: "CIE detected", detail: where || software.text }
+  if (status.card === "present") return { state: "ready", title: "CIE detected", detail: where || software.name }
   if (status.card === "unknown") return { state: "unknown", title: "Place your CIE on the reader", detail: where }
+  // Unavailable software lists no readers, so it comes first.
+  if (!software.ok)
+    return { state: "problem", title: "CIE ID is not set up", detail: "See the setup guide in the dashboard." }
   if (!reader?.ok) return { state: "step", title: "Connect the NFC card reader", detail: "Then place your CIE on it." }
-  if (software.ok) return { state: "step", title: "Place your CIE on the reader", detail: where }
-  return { state: "problem", title: "CIE ID is not set up", detail: "See the setup guide in the dashboard." }
+  return { state: "step", title: "Place your CIE on the reader", detail: where }
 }
 
 /**
@@ -425,21 +451,32 @@ function cardView(status) {
  * stay in the disabled field. When the card arrives, the focus moves on, unless the signer put it somewhere.
  */
 function setCard(next, view) {
-  if (next === "absent" && card === "present" && ++missing < REMOVED_AFTER) return
   missing = 0
   const was = cardReady()
   card = next
   $("card").dataset.state = view.state
   setText($("card-title"), view.title)
-  setText($("card-detail"), view.detail)
-  $("card-detail").hidden = !view.detail
+  const detail = $("card-detail")
+  setText(detail, view.detail)
+  detail.hidden = !view.detail
+  // A long reader name is cut to one line: the full name shows on hover.
+  detail.title = detail.scrollWidth > detail.clientWidth ? view.detail : ""
   const ready = cardReady()
   $("pin-fields").disabled = !ready
   $("submit").disabled = !ready
+  if (card === "present" && CARD_MISSING.has(errorCode)) formError("")
   if (ready && !was && !$("form").hidden && document.activeElement === document.body) focusNext()
 }
 
-function formError(message) {
+/** Errors of a signature that the card was not there for. */
+const CARD_MISSING = new Set(["no_card", "no_reader"])
+/** Errors of a signature that stopped before the PIN reached a card: the field keeps it for the next try. */
+const PIN_KEPT = new Set([...CARD_MISSING, "busy"])
+/** The code of the error shown above the buttons, "" for none or for one without a code. */
+let errorCode = ""
+
+function formError(message, code = "") {
+  errorCode = message ? code : ""
   $("error").textContent = message
   $("error").hidden = !message
 }
@@ -512,11 +549,11 @@ function showResults() {
 
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault()
-  if (!cardReady()) return
+  if (signing || !cardReady()) return
   // Without a PIN the agent uses the one it remembers for this browser.
   const body = { tickets: pending, origin }
+  const pin = remembered ? "" : $("pin").value.trim()
   if (!remembered) {
-    const pin = $("pin").value.trim()
     if (!/^\d{8}$/.test(pin)) {
       pinError(
         /^\d{4}$/.test(pin)
@@ -529,11 +566,17 @@ $("form").addEventListener("submit", async (event) => {
     body.pin = pin
     body.remember = $("remember").checked
   }
+  signing = true
+  // The last status had no card, which may only have moved on the reader: ask again rather than send the PIN for
+  // nothing. When the card is gone, the form goes back to waiting for it, with the PIN still typed.
+  if (missing > 0 && !(await checkCard())) {
+    signing = false
+    return
+  }
   // Cleared before the form goes away, so a browser watching the submission has nothing to offer to save.
   $("pin").value = ""
   formError("")
   pinError("")
-  signing = true
   $("working-title").textContent = pending.length === 1 ? "Signing…" : `Signing ${pending.length} documents…`
   show("working")
   let result
@@ -547,10 +590,12 @@ $("form").addEventListener("submit", async (event) => {
     if (error.code === "pin_incorrect") attempts = error.attempts || attempts
     show("form")
     showPIN()
-    $("pin").value = ""
+    if (PIN_KEPT.has(error.code)) $("pin").value = pin
+    // The card block says it when it holds the PIN back for the card.
+    const shown = CARD_MISSING.has(error.code) && !(await checkCard())
     if (error.code === "pin_incorrect") pinError(wrongPIN())
     else if (PIN_ERRORS.has(error.code)) pinError(error.message)
-    else formError(error.message || "The signature failed.")
+    else if (!shown) formError(error.message || "The signature failed.", error.code)
     // Asking for the PIN is not a failure of the signature.
     if (error.code !== "pin_required") notify("error", error.code)
     return

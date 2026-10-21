@@ -286,7 +286,8 @@ repeats are dropped). The page talks only to the agent:
 - `GET /api/status` describes the providers, readers and card. Its `card` is `present` when a provider sees the card,
   `absent` when no provider could be tried, so a signature would fail before the PIN is sent (no reader, no card, no
   CIE software), and `unknown` when a provider that cannot tell would be tried. The page takes the PIN only when it
-  is not `absent`, and waits for two answers in a row without the card before it holds the PIN back again;
+  is not `absent`, and waits for two answers in a row without the card before it holds the PIN back again; after one,
+  it asks again before it sends a PIN. Three failed answers in a row count as `unknown`;
 - `POST /api/job` `{tickets, origin}` returns `{jobs: [{ticket, job} | {ticket, error}], attempts}`. `attempts` is
   `{left, card}` when one of the jobs' signers typed a wrong PIN since their card last opened: the attempts left before
   the card blocks the PIN, as the card reported them (`card: true`) or as the agent counted them, which misses wrong

@@ -11,16 +11,17 @@ const SOFTWARE = {
 
 /**
  * Describes the reader, the card and the software that would sign, each { ok, text }. The reader also has its name
- * ("" without one), and the software, when none is usable, every provider's detail for support. The development key
- * needs no reader, so with it reader and card are left out; card is left out without a reader too. ready is true when
- * everything described is ok.
+ * ("" without one), and the software its name when one is usable, or else every provider's detail for support. The
+ * development key needs no reader, so with it reader and card are left out; card is left out without a reader too.
+ * ready is true when everything described is ok.
  */
 function describeStatus(status) {
   const available = status.providers.filter((p) => p.available)
   // The provider the agent opens first (Server.open): available, and not known to be without a card.
   const signing = available.find((p) => p.cardPresent !== false) || available[0]
+  const name = signing && (SOFTWARE[signing.provider] || signing.provider)
   const software = signing
-    ? { ok: true, text: SOFTWARE[signing.provider] || signing.provider }
+    ? { ok: true, text: name, name }
     : {
         ok: false,
         text: "Signing software not available",
@@ -29,11 +30,11 @@ function describeStatus(status) {
   if (signing?.provider === "soft") return { ready: status.ready, software }
 
   // Readers of usable providers first: they are the ones named.
-  const [name = ""] = new Set([...available, ...status.providers].flatMap((p) => p.readers || []))
-  const reader = name
-    ? { ok: true, text: `Card reader: ${name}`, name }
-    : { ok: false, text: "Connect the NFC card reader", name }
-  const card = name
+  const [readerName = ""] = new Set([...available, ...status.providers].flatMap((p) => p.readers || []))
+  const reader = readerName
+    ? { ok: true, text: `Card reader: ${readerName}`, name: readerName }
+    : { ok: false, text: "Connect the NFC card reader", name: readerName }
+  const card = readerName
     ? { ok: status.ready, text: status.ready ? "CIE detected" : "Place your CIE on the reader" }
     : undefined
   return { ready: reader.ok && Boolean(card?.ok) && software.ok, reader, card, software }
