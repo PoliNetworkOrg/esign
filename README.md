@@ -14,11 +14,12 @@ finalized by the PoliNetwork backend (PAdES), the agent only signs a digest with
 - A CIE (Carta d'Identità Elettronica 3.0) and its 8-digit PIN.
 - A contactless (NFC) smart-card reader, for example a bit4id miniLector AIR NFC. Most readers work without drivers on
   Windows and macOS; on Linux they need `pcscd` (see below).
-- Optionally, CIE software for your system. The agent tries, in order:
-  - `cie-mw`, the official middleware: **Software CIE** (Mac App Store) on macOS, **CIE ID** on Windows and Linux,
-    from [cartaidentita.interno.gov.it](https://www.cartaidentita.interno.gov.it/pa-e-imprese/documentazione-middleware-cie/).
-    It works only with cards "paired" on this computer, a one-time step with the full PIN. If the card is not paired
-    yet, the agent pairs it through the middleware the first time you sign.
+- **CIE ID**, the official CIE app, from
+  [cartaidentita.interno.gov.it](https://www.cartaidentita.interno.gov.it/pa-e-imprese/documentazione-middleware-cie/)
+  (on the Mac App Store it is listed as "Software CIE"). The agent tries, in order:
+  - `cie-mw`, the middleware that comes with CIE ID. It works only with cards "paired" on this computer, a one-time
+    step with the full PIN. If the card is not paired yet, the agent pairs it through the middleware the first time
+    you sign; on macOS, pair it in CIE ID when you install it (see below).
   - `opencie`, [OpenCIE](https://github.com/M0Rf30/opencie-pkcs11): put its PKCS#11 module
     (`libopencie-pkcs11.so`, `.dylib` or `.dll`) next to the agent or in the agent's configuration folder. It also
     keeps a pairing cache, which the agent creates the same way.
@@ -59,6 +60,10 @@ link handler, Debian package) and keeps its configuration and card pairings.
 
 ### macOS (Apple Silicon and Intel)
 
+First install **CIE ID** from the Mac App Store, where it is listed as "Software CIE", and open it: on an Apple Silicon
+Mac, accept when macOS offers to install Rosetta. Pair your card in it with the 8-digit PIN. If it pairs there, signing
+works with PoliNetwork eSign too; if it does not, ask whoever sent you the signing request. Then:
+
 1. Download [`PoliNetwork-eSign-macos.dmg`](https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg)
    (or the `.zip`) and open it.
 2. Open **PoliNetwork eSign**. The app is not notarized yet, so macOS refuses the first time: open
@@ -68,10 +73,10 @@ link handler, Debian package) and keeps its configuration and card pairings.
    Items**) and opens `http://127.0.0.1:47321/` in your browser. The page shows whether the reader, the CIE and the
    signing software are ready: with the CIE on the reader it says "Ready to sign".
 
-The official Software CIE module is built for Intel Macs only. On Apple Silicon the agent runs it in a helper process
-under Rosetta: if macOS offers to install Rosetta, accept (or run `softwareupdate --install-rosetta`). The first time you
-sign, macOS asks whether **PoliNetwork eSign** may access data from other apps: allow it, so the agent can read the
-card pairing that Software CIE keeps in its own folder.
+CIE ID's middleware is built for Intel Macs only. On Apple Silicon the agent runs it in a helper process under Rosetta,
+which opening CIE ID installs (or run `softwareupdate --install-rosetta`). The first time you sign, macOS asks whether
+**PoliNetwork eSign** may access data from other apps: allow it, so the agent can read the card pairing that CIE ID
+keeps in its own folder.
 
 ### Windows
 
@@ -153,7 +158,7 @@ after the other, and shows which were signed. If the dashboard refuses one docum
 the others are still signed; if the card stops answering, the rest are left unsigned and you can try again.
 
 A wrong PIN uses one of the card's three attempts; the agent never retries a PIN by itself. After three wrong PINs the
-card is blocked: unblock it with the PUK in the CIE software.
+card is blocked: unblock it with the PUK in CIE ID.
 
 ## Troubleshooting
 
@@ -172,14 +177,15 @@ file as above is easier.
 
 Common reports:
 
-- **module: not found** — the CIE software is not installed, or is installed somewhere unusual: set its path in the
-  configuration file (`pkcs11Module` or `openCieModule`).
+- **module: not found** under `cie-mw (CIE ID)` — CIE ID is not installed, or is installed somewhere unusual: set its
+  path in the configuration file (`pkcs11Module`; `openCieModule` for OpenCIE).
 - **loading: impossible … x86_64 only** — an Apple Silicon Mac running a build without Intel code; install the release
   app, which contains both.
 - **readers: none** — the reader is not connected, or (Linux) `pcscd` is not running.
 - **card: false** — put the CIE flat on the reader and keep it still.
-- "This CIE is not set up on this computer yet" when signing — the middleware does not export its pairing function:
-  pair the card in Software CIE / CIE ID.
+- **paired cards: none** (macOS) — open CIE ID and pair the card with its 8-digit PIN.
+- "This CIE is not paired with this computer yet" when signing — CIE ID's middleware does not export its pairing
+  function: pair the card in CIE ID.
 - **agent: NOT running; another program uses port 47321** — close that program, or change `port` in the configuration
   (the dashboard expects 47321).
 
@@ -203,7 +209,7 @@ eSign` on macOS, `%APPDATA%\PoliNetwork eSign` on Windows, `~/.config/PoliNetwor
 ```
 
 `worker` says when a PKCS#11 module runs in a separate helper process: `auto` when needed (another CPU architecture,
-or Software CIE's environment), `always` (a crashing middleware cannot stop the agent), or `never`.
+or CIE ID's environment on macOS), `always` (a crashing middleware cannot stop the agent), or `never`.
 
 ## Commands
 
@@ -300,11 +306,11 @@ missing.
   Developer ID Application certificate, with the hardened runtime and the
   `com.apple.security.cs.disable-library-validation` entitlement (the agent loads the CIE middleware, which another team
   signed), notarize with `xcrun notarytool submit --wait` and staple (`xcrun stapler staple`) both the app and the
-  `.dmg`. A stable signature also keeps macOS from asking again, after each update, for access to Software CIE's data.
+  `.dmg`. A stable signature also keeps macOS from asking again, after each update, for access to CIE ID's data.
 - **Windows code signing** (Authenticode) of `esign.exe`, to avoid SmartScreen warnings; an icon and version
   resource would help too.
 - **Test on real hardware**: Windows 10/11 x64 (and Windows on ARM, which runs the x64 build emulated), Intel and Apple
-  Silicon Macs with Software CIE, and the Linux distributions to support, each with a paired card.
+  Silicon Macs with CIE ID, and the Linux distributions to support, each with a paired card.
 
 ## Code signing
 

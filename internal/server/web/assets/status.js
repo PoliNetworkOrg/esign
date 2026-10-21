@@ -3,7 +3,7 @@
 // What an /api/status answer means for the user, shared by the signing page and the home page so they never disagree.
 
 const SOFTWARE = {
-  "cie-mw": "Official CIE software",
+  "cie-mw": "CIE ID",
   opencie: "OpenCIE",
   cie: "Built into PoliNetwork eSign",
   soft: "Development key (signatures not valid)",
