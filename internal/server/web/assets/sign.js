@@ -89,6 +89,8 @@ function fatal(message, { hint = START_AGAIN, setup = false } = {}) {
   if (setup) $("fatal-setup").href = new URL("/dashboard/esign/setup", origin).href
   $("fatal-setup-row").hidden = !setup
   show("fatal")
+  // The control that had the focus is gone: move it to the heading, as the done screen does, so it is announced.
+  $("fatal-title").focus()
 }
 
 const JOB_ENDED = new Set([
