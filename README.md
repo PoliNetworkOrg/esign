@@ -199,6 +199,9 @@ Common reports:
   function: pair the card in CIE ID.
 - **agent: NOT running; another program uses port 47321** — close that program, or change `port` in the configuration
   (the dashboard expects 47321).
+- The dashboard says that PoliNetwork eSign isn't running while it runs, and the log has `refused dashboard origin` —
+  the agent does not sign for that dashboard (a staging copy, a new domain): add its origin to `allowedOrigins` in the
+  configuration (`doctor` lists the allowed ones).
 
 Logs: macOS `~/Library/Logs/PoliNetwork eSign.log`; Windows `%APPDATA%\PoliNetwork eSign\esign.log`;
 Linux `journalctl --user -u polinetwork-esign`.
@@ -305,7 +308,9 @@ older than protocol 2 sends no steps, and its jobs are signed once.
 
 The page tells the dashboard what happens with `postMessage({type: "pn-esign", status, detail, …})`, only to the
 `origin` of its address and only when the agent signs for it: the agent checks the origin when it serves the page, so
-the page knows where it may post before making any request.
+the page knows where it may post before making any request. A dashboard that the agent does not sign for gets no
+message at all, not even `ready`, so it takes the agent for one that is not running: other sites must not learn that
+the agent runs on this computer.
 
 - `ready`, first thing when the page runs, with the agent's version in `detail` (`0.4.0`, or `dev`). A dashboard that
   gets no `ready` can tell that the agent is not running.
