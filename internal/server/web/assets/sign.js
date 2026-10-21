@@ -244,8 +244,6 @@ function showPIN() {
   const known = Boolean(remembered)
   $("remembered").hidden = !known
   $("pin-fields").hidden = known
-  // A disabled field is left out of the form's validation.
-  $("pin").disabled = known
   if (known) {
     const until = timeFormat.format(new Date(remembered.expires))
     $("remembered-text").textContent =
@@ -367,7 +365,11 @@ $("form").addEventListener("submit", async (event) => {
   if (!remembered) {
     const pin = $("pin").value.trim()
     if (!/^\d{8}$/.test(pin)) {
-      formError("Type the 8 digits of your CIE PIN.")
+      formError(
+        /^\d{4}$/.test(pin)
+          ? "Type all 8 digits of your CIE PIN. Other CIE apps ask only for the last 4."
+          : "Type the 8 digits of your CIE PIN.",
+      )
       $("pin").focus()
       return
     }

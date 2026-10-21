@@ -140,8 +140,8 @@ The official CIE ID middleware for Linux is published for x86_64 only (`.deb`, `
 ## Using it
 
 In the dashboard, open a document and choose **Sign with CIE**. A small window from the agent asks for your PIN; keep
-the card on the reader until it says the document is signed. If the dashboard says the agent is not running, use its
-**Start the agent** link (or open the app again).
+the card on the reader until it says the document is signed. If the dashboard says PoliNetwork eSign is not running,
+use its **Start PoliNetwork eSign** button (or open the app again).
 
 You type the PIN once even when there is more to sign: a document where you sign in several places (each place is a
 separate signature), or up to 10 documents that the dashboard sends together. The window lists them, signs them one

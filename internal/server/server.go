@@ -171,7 +171,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'")
 		// Blocks DNS rebinding: a foreign host name resolving to 127.0.0.1 is refused.
 		if !s.hostAllowed(r.Host) {
-			http.Error(w, "Address the agent as 127.0.0.1 or localhost", http.StatusMisdirectedRequest)
+			http.Error(w, "Address PoliNetwork eSign as 127.0.0.1 or localhost", http.StatusMisdirectedRequest)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -309,7 +309,7 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) (*jobRequest, Ba
 	}
 	if !OriginAllowed(s.opts.AllowedOrigins, req.Origin) {
 		s.opts.Logger.Warn("refused dashboard origin", "origin", req.Origin)
-		writeError(w, http.StatusForbidden, "origin_forbidden", "This agent does not sign for "+req.Origin+".")
+		writeError(w, http.StatusForbidden, "origin_forbidden", "PoliNetwork eSign does not sign for "+req.Origin+".")
 		return nil, nil, false
 	}
 	return &req, s.opts.Backend(req.Origin), true
@@ -377,7 +377,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	for _, t := range req.Tickets {
 		wg.Go(func() {
-			if err := be.Fail(ctx, t, "cancelled", "Cancelled in the agent"); err != nil {
+			if err := be.Fail(ctx, t, "cancelled", "Cancelled in PoliNetwork eSign"); err != nil {
 				s.opts.Logger.Warn("cancel job", "error", err)
 			}
 		})
