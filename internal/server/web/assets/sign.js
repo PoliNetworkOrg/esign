@@ -111,8 +111,8 @@ const TERMINAL = new Set(["pin_locked", "card_untrusted", "middleware_missing", 
 const SETUP = new Set(["middleware_missing", "not_paired", "card_untrusted"])
 /** Errors whose message already says what to do next. */
 const EXPLAINED = new Set(["job_done", "job_cancelled", "document_changed", "job_failed", "pin_locked"])
-/** Card errors after which the same documents can be signed again. */
-const RETRYABLE = new Set(["card_removed", "device_error", "no_card", "no_reader"])
+/** Errors after which the same documents can be signed again: card errors, and a backend that did not answer. */
+const RETRYABLE = new Set(["card_removed", "device_error", "no_card", "no_reader", "backend_unreachable"])
 
 /** The page's own words for an expired link, the same however the expiry was noticed. */
 const errorText = (error) => (error?.code === "job_expired" ? "This signing link expired." : error?.message)
@@ -354,7 +354,7 @@ function showResults() {
   if (docs.length === 1) {
     const result = outcome.get(docs[0].ticket)
     if (!all) {
-      // One document: a card error goes back to the PIN, anything else ends here, as before.
+      // One document: an error that retrying can fix goes back to the PIN, anything else ends here, as before.
       if (again.length) return showForm(docs, [docs[0].ticket], result.error.message)
       return fatalError(result.error)
     }
@@ -370,7 +370,9 @@ function showResults() {
 
   let message = signer ? `Signed as ${signer}.` : ""
   if (all) message += " You can close this window."
-  else if (again.length) message += " Keep the CIE still on the reader and try again."
+  else if (again.some((d) => outcome.get(d.ticket).error.code !== "backend_unreachable"))
+    message += " Keep the CIE still on the reader and try again."
+  else if (again.length) message += " Try again in a moment."
   else message += " Start again from the dashboard for the others."
   $("done-message").textContent = message.trim()
   $("retry").hidden = again.length === 0
