@@ -831,3 +831,61 @@ func TestNothingToOpen(t *testing.T) {
 		}
 	}
 }
+
+// TestCardState: the page holds the PIN back exactly when open would try no provider, and never because a provider
+// cannot tell whether a card is there.
+func TestCardState(t *testing.T) {
+	yes, no := true, false
+	cases := []struct {
+		statuses []token.Status
+		want     string
+	}{
+		{nil, cardAbsent},
+		{[]token.Status{{}}, cardAbsent},
+		{[]token.Status{{CardPresent: &yes}}, cardAbsent},
+		{[]token.Status{{Available: true, CardPresent: &no}}, cardAbsent},
+		{[]token.Status{{Available: true, CardPresent: &yes}}, cardPresent},
+		{[]token.Status{{Available: true}}, cardUnknown},
+		{[]token.Status{{Available: true}, {Available: true, CardPresent: &no}}, cardUnknown},
+		{[]token.Status{{Available: true, CardPresent: &no}, {Available: true, CardPresent: &yes}}, cardPresent},
+		{[]token.Status{{Available: true}, {Available: true, CardPresent: &yes}}, cardPresent},
+	}
+	for i, c := range cases {
+		if got := cardState(c.statuses); got != c.want {
+			t.Errorf("case %d: cardState = %q, want %q", i, got, c.want)
+		}
+	}
+}
+
+// TestStatusCard: the status tells the page whether the card is there, and a signature started without it does not
+// send the PIN anywhere.
+func TestStatusCard(t *testing.T) {
+	s, fb, r := rememberServer(t, -1)
+	card := func() string {
+		t.Helper()
+		var st statusResponse
+		rec := do(t, s, req{method: "GET", path: "/api/status"})
+		if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("status: %d %s", rec.Code, rec.Body)
+		}
+		return st.Card
+	}
+	if got := card(); got != cardPresent {
+		t.Errorf("card on the reader: %q", got)
+	}
+	r.present.Store(false)
+	if got := card(); got != cardAbsent {
+		t.Errorf("card taken away: %q", got)
+	}
+	rec := signWith(t, s, jobRequest{PIN: "12345678"}, nil)
+	if errorCode(rec) != "no_card" || r.opened.Load() != 0 || len(fb.signatures) != 0 {
+		t.Errorf("sign without the card: %d %s, opened %d times", rec.Code, rec.Body, r.opened.Load())
+	}
+
+	s = newServer(&fakeBackend{}, &noCard{})
+	var st statusResponse
+	_ = json.Unmarshal(do(t, s, req{method: "GET", path: "/api/status"}).Body.Bytes(), &st)
+	if st.Card != cardUnknown {
+		t.Errorf("provider that cannot tell: %q", st.Card)
+	}
+}

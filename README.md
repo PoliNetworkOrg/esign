@@ -148,8 +148,10 @@ The official CIE ID middleware for Linux is published for x86_64 only (`.deb`, `
 
 ## Using it
 
-In the dashboard, open a document and choose **Sign with CIE**. A small window from the agent asks for your PIN; keep
-the card on the reader until it says the document is signed. If the dashboard says PoliNetwork eSign is not running,
+In the dashboard, open a document and choose **Sign with CIE**. A small window from the agent opens: place the CIE on
+the reader first, and the PIN field opens as soon as the agent sees the card. If you take the card away, the field
+and **Sign** wait for it again, keeping what you typed. Keep the card on the reader until the window says the document
+is signed. If the dashboard says PoliNetwork eSign is not running,
 use its **Start PoliNetwork eSign** button (or open the app again).
 
 You type the PIN once even when there is more to sign: a document where you sign in several places (each place is a
@@ -276,6 +278,10 @@ provider accepts it only when a test hands it that CSCA.
 The dashboard opens `/sign?origin=<dashboard>&ticket=<t1>&ticket=<t2>…`, one single-use ticket per document (1 to 10;
 repeats are dropped). The page talks only to the agent:
 
+- `GET /api/status` describes the providers, readers and card. Its `card` is `present` when a provider sees the card,
+  `absent` when no provider could be tried, so a signature would fail before the PIN is sent (no reader, no card, no
+  CIE software), and `unknown` when a provider that cannot tell would be tried. The page takes the PIN only when it
+  is not `absent`, and waits for two answers in a row without the card before it holds the PIN back again;
 - `POST /api/job` `{tickets, origin}` returns `{jobs: [{ticket, job} | {ticket, error}]}`;
 - `POST /api/sign` `{tickets, origin, pin}` opens one card session and, for each job in order, repeats
   `prepare` (with `protocol: 2`), card signature and `complete` until the backend answers `completed`. It returns

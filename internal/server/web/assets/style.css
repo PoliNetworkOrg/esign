@@ -218,6 +218,104 @@ h1 {
   background: currentColor;
 }
 
+/* The signing page's card block. "step" is the signer's next move (connect the reader, place the CIE), highlighted
+   because the PIN waits for it; "ready" is the card found; "problem" is something the card cannot fix; "checking" and
+   "unknown" stay neutral. Two lines high in every state, so the form below never moves when it changes. */
+.card-step {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 12px;
+  align-items: center;
+  min-height: 62px;
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 14px;
+  transition:
+    background-color 200ms ease-out,
+    border-color 200ms ease-out,
+    color 200ms ease-out;
+}
+
+.card-icon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.card-step .ok,
+.card-step[data-state="ready"] .wait {
+  display: none;
+}
+
+.card-step[data-state="ready"] .ok {
+  display: inline;
+}
+
+.card-text {
+  display: grid;
+  margin: 0;
+  line-height: 20px;
+}
+
+.card-text strong {
+  font-weight: 600;
+}
+
+.card-text span {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.card-step[data-state="step"] {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  color: var(--accent);
+}
+
+.card-step[data-state="step"] strong {
+  color: var(--fg);
+}
+
+.card-step[data-state="step"] span {
+  color: var(--fg-muted);
+}
+
+.card-step[data-state="ready"] {
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.card-step[data-state="problem"] {
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  transition: opacity 150ms ease-out;
+}
+
+/* Waiting for the card: the PIN keeps what was typed, but cannot be typed in or sent. */
+fieldset:disabled {
+  opacity: 0.55;
+}
+
+fieldset:disabled label,
+fieldset:disabled input {
+  cursor: default;
+}
+
 .status-list {
   display: grid;
   gap: 8px;
@@ -446,5 +544,10 @@ h1:focus {
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation-duration: 2.4s;
+  }
+
+  .card-step,
+  fieldset {
+    transition: none;
   }
 }

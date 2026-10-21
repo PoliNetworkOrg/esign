@@ -47,6 +47,17 @@ let signer = ""
 let remembered = null
 /** How long the agent remembers a PIN on request, 0 when it does not offer to. */
 let rememberMinutes = 0
+/**
+ * What the agent says about the card: "checking" until it answers, then "present", "absent" (a signature would fail
+ * before the PIN is sent) or "unknown" (it cannot tell). The PIN and Sign wait while the card is checked for or absent,
+ * so that nobody types a PIN for a card that is not there; "unknown" never holds them back.
+ */
+let card = "checking"
+const cardReady = () => card === "present" || card === "unknown"
+/** Answers in a row without the card since the page last saw it. */
+let missing = 0
+/** A card moving on the reader can drop out of one answer: only this many in a row mean that it was taken away. */
+const REMOVED_AFTER = 2
 
 function readTickets() {
   try {
@@ -59,6 +70,11 @@ function readTickets() {
 
 function show(id) {
   for (const s of sections) $(s).hidden = s !== id
+}
+
+/** Sets text only when it changes, so that live regions announce changes and nothing else. */
+function setText(el, text) {
+  if (el.textContent !== text) el.textContent = text
 }
 
 /**
@@ -295,12 +311,16 @@ function showPIN() {
     const until = timeFormat.format(new Date(remembered.expires))
     $("remembered-text").textContent =
       `Your PIN is remembered${remembered.signer ? ` for ${remembered.signer}` : ""} until ${until}, while the CIE stays on the reader.`
-    $("submit").focus()
   } else {
     $("remember-row").hidden = !rememberMinutes
     $("remember-text").textContent = `Remember the PIN on this computer for ${rememberMinutes} minutes`
-    $("pin").focus()
   }
+  if (cardReady()) focusNext()
+}
+
+/** Moves the focus to what the signer does once the card is there: type the PIN, or press Sign when it is remembered. */
+function focusNext() {
+  ;(remembered ? $("submit") : $("pin")).focus()
 }
 
 /** Updates what the agent remembers from a status, and asks for the PIN when the agent forgot it meanwhile. */
@@ -361,27 +381,49 @@ async function checkExpiry() {
 async function pollStatus() {
   if (signing) return
   checkExpiry()
-  const card = $("card")
   let status
   try {
     status = await api("/api/status")
   } catch (error) {
-    if (error.code === "agent_unreachable" && ++unanswered >= 3) {
-      card.dataset.state = "waiting"
-      $("card-text").textContent = "PoliNetwork eSign stopped answering. Start it again."
-    }
+    // Signing would fail and say so: the PIN is not held back for it.
+    if (error.code === "agent_unreachable" && ++unanswered >= 3)
+      setCard("unknown", { state: "problem", title: "PoliNetwork eSign stopped answering", detail: "Start it again." })
     return
   }
   unanswered = 0
   if (status.busy) return
   setRemembered(status.remembered)
+  setCard(status.card, cardView(status))
+}
+
+/** What the card block says for a status: its state ("step" is the signer's next move), title and detail. */
+function cardView(status) {
   const { reader, software } = describeStatus(status)
-  card.dataset.state = status.ready ? "ready" : "waiting"
-  if (status.ready) $("card-text").textContent = reader?.name ? `Card detected on ${reader.name}` : "Card detected"
-  // Unavailable software lists no readers, so it comes first.
-  else if (!software.ok) $("card-text").textContent = "CIE ID is not set up. See the setup guide in the dashboard."
-  else if (!reader?.ok) $("card-text").textContent = "Connect the NFC card reader"
-  else $("card-text").textContent = `Place your CIE on the reader (${reader.name})`
+  const where = reader?.name || ""
+  if (status.card === "present") return { state: "ready", title: "CIE detected", detail: where || software.text }
+  if (status.card === "unknown") return { state: "unknown", title: "Place your CIE on the reader", detail: where }
+  if (!reader?.ok) return { state: "step", title: "Connect the NFC card reader", detail: "Then place your CIE on it." }
+  if (software.ok) return { state: "step", title: "Place your CIE on the reader", detail: where }
+  return { state: "problem", title: "CIE ID is not set up", detail: "See the setup guide in the dashboard." }
+}
+
+/**
+ * Shows what the agent says about the card, and holds the PIN and Sign back while no card is there: the typed digits
+ * stay in the disabled field. When the card arrives, the focus moves on, unless the signer put it somewhere.
+ */
+function setCard(next, view) {
+  if (next === "absent" && card === "present" && ++missing < REMOVED_AFTER) return
+  missing = 0
+  const was = cardReady()
+  card = next
+  $("card").dataset.state = view.state
+  setText($("card-title"), view.title)
+  setText($("card-detail"), view.detail)
+  $("card-detail").hidden = !view.detail
+  const ready = cardReady()
+  $("pin-fields").disabled = !ready
+  $("submit").disabled = !ready
+  if (ready && !was && !$("form").hidden && document.activeElement === document.body) focusNext()
 }
 
 function formError(message) {
@@ -438,6 +480,7 @@ function showResults() {
 
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault()
+  if (!cardReady()) return
   // Without a PIN the agent uses the one it remembers for this browser.
   const body = { tickets: pending, origin }
   if (!remembered) {

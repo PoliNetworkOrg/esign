@@ -46,9 +46,22 @@
         </dl>
         <ul id="docs" class="docs" hidden tabindex="0" aria-label="Documents to sign"></ul>
 
-        <div id="card" class="card-status" data-state="unknown" role="status" aria-live="polite">
-          <span class="dot" aria-hidden="true"></span>
-          <span id="card-text">Looking for the card reader…</span>
+        <div id="card" class="card-step" data-state="checking" role="status" aria-live="polite">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <g class="wait">
+              <rect x="2.75" y="5.25" width="18.5" height="13.5" rx="2.5" />
+              <rect x="6" y="9.25" width="4.5" height="3.5" rx="0.75" />
+              <path d="M13.5 10h4.25M13.5 13.25h2.75" />
+            </g>
+            <g class="ok">
+              <circle cx="12" cy="12" r="9.25" />
+              <path d="m8.25 12.25 2.5 2.5 5-5" />
+            </g>
+          </svg>
+          <p class="card-text">
+            <strong id="card-title">Looking for the card reader…</strong>
+            <span id="card-detail" hidden></span>
+          </p>
         </div>
 
         <div id="remembered" class="remembered" hidden>
@@ -56,7 +69,7 @@
           <button type="button" class="link" id="forget">Use a different PIN</button>
         </div>
 
-        <div id="pin-fields">
+        <fieldset id="pin-fields" disabled>
           <label for="pin">CIE PIN</label>
           <input
             id="pin"
@@ -85,13 +98,13 @@
             <input id="remember" type="checkbox" />
             <span id="remember-text"></span>
           </label>
-        </div>
+        </fieldset>
 
         <p id="error" class="error" role="alert" hidden></p>
 
         <div class="actions">
           <button type="button" class="secondary" id="cancel">Cancel</button>
-          <button type="submit" id="submit">Sign</button>
+          <button type="submit" id="submit" disabled>Sign</button>
         </div>
       </form>
 

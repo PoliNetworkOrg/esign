@@ -295,8 +295,41 @@ type statusResponse struct {
 	Providers []token.Status `json:"providers"`
 	// Ready is true when some provider sees a card.
 	Ready bool `json:"ready"`
+	// Card says whether a PIN typed now could reach a card (see cardState).
+	Card string `json:"card"`
 	// Remembered is set while this browser has a remembered PIN.
 	Remembered *rememberedInfo `json:"remembered,omitempty"`
+}
+
+// usable reports whether open would try the provider: it works and does not report that the card is missing.
+func usable(st token.Status) bool {
+	return st.Available && (st.CardPresent == nil || *st.CardPresent)
+}
+
+// Card states for the signing page, which takes the PIN only when it could reach a card.
+const (
+	// cardPresent: a usable provider sees a card.
+	cardPresent = "present"
+	// cardAbsent: no provider would be tried, so a signature would fail before the PIN is sent: no reader, no card, or
+	// no CIE software.
+	cardAbsent = "absent"
+	// cardUnknown: a usable provider cannot tell whether a card is there. The page must not hold the PIN back on it.
+	cardUnknown = "unknown"
+)
+
+// cardState tells what a signature started now would find, as open sees it.
+func cardState(statuses []token.Status) string {
+	state := cardAbsent
+	for _, st := range statuses {
+		switch {
+		case !usable(st):
+		case st.CardPresent != nil:
+			return cardPresent
+		default:
+			state = cardUnknown
+		}
+	}
+	return state
 }
 
 // providerStatus is p's status; a panic in it is logged and reported as unavailable.
@@ -317,6 +350,7 @@ func (s *Server) statuses(ctx context.Context) statusResponse {
 			res.Ready = true
 		}
 	}
+	res.Card = cardState(res.Providers)
 	return res
 }
 
@@ -472,7 +506,7 @@ func (s *Server) open(ctx context.Context, pin string) (token.Session, token.Pro
 		st := s.providerStatus(ctx, p)
 		readers = readers || len(st.Readers) > 0
 		available = available || st.Available
-		if !st.Available || (st.CardPresent != nil && !*st.CardPresent) {
+		if !usable(st) {
 			continue
 		}
 		session, err := p.Open(ctx, pin)
