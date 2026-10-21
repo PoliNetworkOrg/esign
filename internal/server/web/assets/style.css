@@ -355,7 +355,8 @@ a:hover {
   margin-top: 0;
 }
 
-button {
+button,
+a.button {
   height: 40px;
   padding: 0 18px;
   border: 1px solid transparent;
@@ -367,8 +368,20 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+/* A link that looks like the primary button: the download of the newest version. */
+a.button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+button:hover,
+a.button:hover {
   background: var(--accent-hover);
+}
+
+a.button:hover {
+  color: #fff;
 }
 
 button:disabled {

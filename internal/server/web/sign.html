@@ -29,7 +29,11 @@
         <p id="fatal-setup-row" class="muted" hidden>
           <a id="fatal-setup" target="_blank" rel="noreferrer">Open the setup guide</a>
         </p>
-        <button type="button" class="secondary" data-close>Close</button>
+        <div class="actions">
+          <button type="button" class="secondary" data-close>Close</button>
+          <a id="fatal-download" class="button" href="{{.Download.URL}}" hidden
+            {{- if .Download.Page}} target="_blank" rel="noreferrer"{{end}}>{{.Download.Label}}</a>
+        </div>
       </section>
 
       <form id="form" class="panel" hidden autocomplete="off" novalidate>

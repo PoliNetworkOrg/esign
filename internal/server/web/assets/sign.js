@@ -96,18 +96,22 @@ async function api(path, body) {
 const START_AGAIN = "Close this window and start again from the dashboard."
 
 /**
- * Ends the page on message, followed by hint ("" for none) and, with setup, a link to the dashboard's setup guide. The
- * dashboard learns it as a fatal error with code, so it explains it instead of waiting for the window.
+ * Ends the page on message, followed by hint ("" for none) and, with setup, a link to the dashboard's setup guide or,
+ * with download, the download of the newest version. The dashboard learns it as a fatal error with code, so it
+ * explains it instead of waiting for the window.
  */
-function fatal(message, { code = "internal", hint = START_AGAIN, setup = false } = {}) {
+function fatal(message, options = {}) {
+  const { code = "internal", title = "Cannot sign", hint = START_AGAIN, setup = false, download = false } = options
   stopPolling()
   notify("error", code, { message, fatal: true })
+  $("fatal-title").textContent = title
   $("fatal-message").textContent = message
   $("fatal-hint").textContent = hint
   $("fatal-hint").hidden = !hint
   // origin was accepted by the agent before any error that asks for the setup guide.
   if (setup) $("fatal-setup").href = new URL("/dashboard/esign/setup", origin).href
   $("fatal-setup-row").hidden = !setup
+  $("fatal-download").hidden = !download
   show("fatal")
   // The control that had the focus is gone: move it to the heading, as the done screen does, so it is announced.
   $("fatal-title").focus()
@@ -134,6 +138,16 @@ const RETRYABLE = new Set(["card_removed", "device_error", "no_card", "no_reader
 
 /** The page's own words for an expired link, the same however the expiry was noticed. */
 const errorText = (error) => (error?.code === "job_expired" ? "This signing link expired." : error?.message)
+
+/** Ends the page on a version that the dashboard no longer accepts, offering the one that replaces it. */
+function outdated() {
+  fatal("This version is too old to sign. Download the new one and open it: it replaces this one.", {
+    code: "agent_outdated",
+    title: "Update PoliNetwork eSign",
+    hint: "Then sign again from the dashboard.",
+    download: true,
+  })
+}
 
 /** Ends the page on an error that leaves nothing to sign here. */
 function fatalError(error) {
@@ -220,6 +234,7 @@ async function load() {
   } catch (error) {
     return fatal(error.message || "Cannot load the document.", { code: error.code })
   }
+  if (docs.some((d) => d.error?.code === "agent_outdated")) return outdated()
   for (const doc of docs) if (!doc.job) outcome.set(doc.ticket, { status: "failed", error: doc.error })
   const ready = docs.filter((d) => d.job)
   if (!ready.length) {
@@ -388,6 +403,8 @@ function showResults() {
   const all = signed === docs.length
   const again = retryable()
   const failed = docs.map((d) => outcome.get(d.ticket)?.error?.code).find(Boolean)
+  // The dashboard checks the version again before each signature.
+  if (!signed && docs.some((d) => outcome.get(d.ticket)?.error?.code === "agent_outdated")) return outdated()
 
   if (docs.length === 1 && !all) {
     const result = outcome.get(docs[0].ticket)

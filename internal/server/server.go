@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -45,6 +46,8 @@ type pageData struct {
 	Version string
 	// Dashboard is the signing page's origin parameter when the agent signs for it: the page's messages go there only.
 	Dashboard string
+	// Download replaces this version when the dashboard no longer accepts it.
+	Download downloadLink
 }
 
 // shownVersion drops the "v" of a release tag.
@@ -237,7 +240,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 
 func (s *Server) page(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data := pageData{Version: shownVersion(s.opts.Version)}
+		data := pageData{Version: shownVersion(s.opts.Version), Download: download(runtime.GOOS)}
 		if origin := r.URL.Query().Get("origin"); OriginAllowed(s.opts.AllowedOrigins, origin) {
 			data.Dashboard = origin
 		}

@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -264,6 +267,58 @@ func TestSignPageDashboard(t *testing.T) {
 		if attrs := `data-version="test" data-dashboard="` + want + `"`; !strings.Contains(page, attrs) {
 			t.Errorf("%s: no %s in\n%s", path, attrs, page)
 		}
+	}
+}
+
+func TestDownload(t *testing.T) {
+	cases := map[string]downloadLink{
+		"darwin":  {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg", Label: "Download for macOS"},
+		"windows": {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-windows-amd64.zip", Label: "Download for Windows"},
+		"linux":   {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest", Label: "Open the download page", Page: true},
+	}
+	for goos, want := range cases {
+		if got := download(goos); got != want {
+			t.Errorf("download(%q) = %+v, want %+v", goos, got, want)
+		}
+	}
+}
+
+// TestDownloadsAreReleased: the files the page downloads are the ones the build scripts write and the release
+// workflow requires.
+func TestDownloadsAreReleased(t *testing.T) {
+	for goos, script := range map[string]string{"darwin": "build-macos.sh", "windows": "build-windows.sh"} {
+		name := path.Base(download(goos).URL)
+		for _, file := range []string{"../../scripts/" + script, "../../.github/workflows/release.yml"} {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), name) {
+				t.Errorf("%s does not mention %s", file, name)
+			}
+		}
+	}
+}
+
+// TestSignPageOffersTheDownload: the installer downloads in the window itself, the release page opens in a new tab.
+func TestSignPageOffersTheDownload(t *testing.T) {
+	link := map[string]string{
+		"darwin":  `<a id="fatal-download" class="button" href="` + download("darwin").URL + `" hidden>Download for macOS</a>`,
+		"windows": `<a id="fatal-download" class="button" href="` + download("windows").URL + `" hidden>Download for Windows</a>`,
+		"linux":   `<a id="fatal-download" class="button" href="` + latestRelease + `" hidden target="_blank" rel="noreferrer">Open the download page</a>`,
+	}
+	for goos, want := range link {
+		var page bytes.Buffer
+		if err := pages.ExecuteTemplate(&page, "sign.html", pageData{Download: download(goos)}); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(page.String(), want) {
+			t.Errorf("%s: no %s in\n%s", goos, want, &page)
+		}
+	}
+	s, _, _ := setup(t)
+	if page := do(t, s, req{method: "GET", path: "/sign"}).Body.String(); !strings.Contains(page, download(runtime.GOOS).URL) {
+		t.Errorf("the page does not offer the download for %s:\n%s", runtime.GOOS, page)
 	}
 }
 

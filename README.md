@@ -157,6 +157,9 @@ separate signature), or up to 10 documents that the dashboard sends together. Th
 after the other, and shows which were signed. If the dashboard refuses one document (for example because it changed),
 the others are still signed; if the card stops answering, the rest are left unsigned and you can try again.
 
+When the dashboard no longer accepts your version of PoliNetwork eSign, the window says so before it asks for the
+PIN, with the download for your system: open the downloaded file and it replaces the old version.
+
 A wrong PIN uses one of the card's three attempts; the agent never retries a PIN by itself. After three wrong PINs the
 card is blocked: unblock it with the PUK in CIE ID.
 
@@ -291,7 +294,8 @@ the page knows where it may post before making any request.
   gets no `ready` can tell that the agent is not running.
 - `error`, with the error code in `detail`. When the window cannot go on (the link is not valid, the jobs could not be
   loaded or expired, the card cannot be used, …) the message also has `message`, the text the window shows, and
-  `fatal: true`.
+  `fatal: true`. When the backend answers `agent_outdated`, on the job or on `prepare`, the window shows "Update
+  PoliNetwork eSign" with the download for its system instead of the PIN form.
 - `completed` when every document was signed, `cancelled` when the signer cancelled.
 
 Builds:
@@ -308,8 +312,8 @@ and DNF repositories and the AUR package: see [`docs/linux-packages.md`](docs/li
 The macOS and Windows files have the same names in every release (`PoliNetwork-eSign-macos.dmg`,
 `PoliNetwork-eSign-macos.zip`, `PoliNetwork-eSign-windows-amd64.zip`), so
 `https://github.com/PoliNetworkOrg/esign/releases/latest/download/<name>` always downloads the newest release that is
-not a pre-release. The dashboard links the `.dmg` and the Windows `.zip` that way, and the release fails if either is
-missing.
+not a pre-release. The dashboard and the agent's "Update PoliNetwork eSign" screen link the `.dmg` and the Windows
+`.zip` that way, and the release fails if either is missing.
 
 ### Maintainer TODO before a public release
 
