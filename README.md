@@ -296,6 +296,8 @@ and DNF repositories and the AUR package: see [`docs/linux-packages.md`](docs/li
 
 ## Code signing
 
-Windows: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org). macOS: signed and notarized with PoliNetwork APS's Developer ID. See
-[`docs/code-signing.md`](docs/code-signing.md) for the policy and setup.
+Releases are not signed yet: macOS builds are signed ad hoc, so Gatekeeper asks each user to allow the app once, and
+Windows builds are unsigned, so SmartScreen warns (see the maintainer TODO above). Once set up, Windows builds get free
+code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org), and macOS builds are signed and notarized with PoliNetwork APS's Developer
+ID. See [`docs/code-signing.md`](docs/code-signing.md) for the policy and setup.
