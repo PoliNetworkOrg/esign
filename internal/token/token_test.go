@@ -1,7 +1,9 @@
 package token
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -20,5 +22,18 @@ func TestAfterPIN(t *testing.T) {
 	}
 	if PINSent(Errorf(CodeNotPaired, "x")) {
 		t.Fatal("unmarked error reported as sent")
+	}
+}
+
+type panicking struct{}
+
+func (panicking) Name() string                                  { return "broken" }
+func (panicking) Status(context.Context) Status                 { panic("index out of range") }
+func (panicking) Open(context.Context, string) (Session, error) { return nil, nil }
+
+func TestSafeStatus(t *testing.T) {
+	st, err := SafeStatus(t.Context(), panicking{})
+	if st.Available || st.Provider != "broken" || err == nil || !strings.Contains(err.Error(), "index out of range") {
+		t.Fatalf("got %+v, %v", st, err)
 	}
 }

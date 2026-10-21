@@ -23,6 +23,7 @@ import (
 	"github.com/PoliNetworkOrg/esign/internal/launch"
 	"github.com/PoliNetworkOrg/esign/internal/macapp"
 	"github.com/PoliNetworkOrg/esign/internal/server"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 	"github.com/PoliNetworkOrg/esign/internal/token/soft"
 )
 
@@ -272,8 +273,11 @@ func executable() string {
 
 func printStatus(ctx context.Context, specs []providerSpec) {
 	for _, s := range specs {
-		st := s.Provider.Status(ctx)
+		st, err := token.SafeStatus(ctx, s.Provider)
 		fmt.Printf("%s: available=%v %s\n", st.Provider, st.Available, st.Detail)
+		if err != nil {
+			fmt.Printf("  error: %v\n", err)
+		}
 		for _, r := range st.Readers {
 			fmt.Printf("  reader: %s\n", r)
 		}

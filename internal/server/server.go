@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -209,6 +210,15 @@ func (s *Server) api(handler func(w http.ResponseWriter, r *http.Request)) http.
 			writeError(w, http.StatusUnsupportedMediaType, "bad_request", "Send JSON")
 			return
 		}
+		defer func() {
+			if v := recover(); v != nil {
+				if v == http.ErrAbortHandler {
+					panic(v)
+				}
+				s.opts.Logger.Error("api panic", "path", r.URL.Path, "panic", v, "stack", string(debug.Stack()))
+				writeError(w, http.StatusInternalServerError, "internal", "PoliNetwork eSign hit an unexpected error. Try again.")
+			}
+		}()
 		handler(w, r)
 	}
 }
@@ -224,10 +234,19 @@ type statusResponse struct {
 	Remembered *rememberedInfo `json:"remembered,omitempty"`
 }
 
+// providerStatus is p's status; a panic in it is logged and reported as unavailable.
+func (s *Server) providerStatus(ctx context.Context, p token.Provider) token.Status {
+	st, err := token.SafeStatus(ctx, p)
+	if err != nil {
+		s.opts.Logger.Error("provider status", "provider", p.Name(), "error", err)
+	}
+	return st
+}
+
 func (s *Server) statuses(ctx context.Context) statusResponse {
 	res := statusResponse{Agent: "polinetwork-esign", Version: s.opts.Version, OS: osName()}
 	for _, p := range s.opts.Providers {
-		st := p.Status(ctx)
+		st := s.providerStatus(ctx, p)
 		res.Providers = append(res.Providers, st)
 		if st.Available && st.CardPresent != nil && *st.CardPresent {
 			res.Ready = true
@@ -378,11 +397,15 @@ var fallbackCodes = map[token.Code]bool{
 }
 
 // open authenticates with the first provider that sees a card, falling back only when the provider says no PIN was
-// sent: a PIN that reached a module or card may have used an attempt, and must not be tried again elsewhere.
+// sent: a PIN that reached a module or card may have used an attempt, and must not be tried again elsewhere. When no
+// provider can be tried, the error says what is missing: a reader, CIE software or the card.
 func (s *Server) open(ctx context.Context, pin string) (token.Session, token.Provider, error) {
 	var firstErr error
+	readers, available := false, false
 	for _, p := range s.opts.Providers {
-		st := p.Status(ctx)
+		st := s.providerStatus(ctx, p)
+		readers = readers || len(st.Readers) > 0
+		available = available || st.Available
 		if !st.Available || (st.CardPresent != nil && !*st.CardPresent) {
 			continue
 		}
@@ -398,10 +421,15 @@ func (s *Server) open(ctx context.Context, pin string) (token.Session, token.Pro
 			firstErr = err
 		}
 	}
-	if firstErr == nil {
-		firstErr = token.Errorf(token.CodeNoCard, "no provider sees a card")
+	switch {
+	case firstErr != nil:
+		return nil, nil, firstErr
+	case !readers:
+		return nil, nil, token.Errorf(token.CodeNoReader, "no provider sees a reader")
+	case !available:
+		return nil, nil, token.Errorf(token.CodeMiddlewareMissing, "no provider is available")
 	}
-	return nil, nil, firstErr
+	return nil, nil, token.Errorf(token.CodeNoCard, "no provider sees a card")
 }
 
 // signResult is what happened to one ticket: "completed", "failed" or "skipped" (not tried after a card error).

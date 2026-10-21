@@ -19,6 +19,8 @@ if (!CSS.supports("-webkit-text-security", "disc")) $("pin").type = "password"
 
 const sections = ["loading", "fatal", "form", "working", "done"]
 let pollTimer = 0
+/** Status polls in a row that got no answer from the agent. */
+let unanswered = 0
 let signing = false
 /** Every document of the link, in order: { ticket, job } or { ticket, error }. */
 let docs = []
@@ -55,12 +57,19 @@ function notify(status, detail) {
 }
 
 async function api(path, body) {
-  const res = await fetch(path, {
-    method: body ? "POST" : "GET",
-    headers: { "X-PN-eSign": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  })
+  let res
+  try {
+    res = await fetch(path, {
+      method: body ? "POST" : "GET",
+      headers: { "X-PN-eSign": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+    })
+  } catch {
+    throw Object.assign(new Error("PoliNetwork eSign stopped answering. Start it again, then press Sign."), {
+      code: "agent_unreachable",
+    })
+  }
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw Object.assign(new Error(data.error?.message || res.statusText), data.error || {})
   return data
@@ -240,26 +249,32 @@ function stopPolling() {
 
 async function pollStatus() {
   if (signing) return
+  const card = $("card")
   let status
   try {
     status = await api("/api/status")
-  } catch {
+  } catch (error) {
+    if (error.code === "agent_unreachable" && ++unanswered >= 3) {
+      card.dataset.state = "waiting"
+      $("card-text").textContent = "PoliNetwork eSign stopped answering. Start it again."
+    }
     return
   }
+  unanswered = 0
   if (status.busy) return
   setRemembered(status.remembered)
-  const card = $("card")
   const usable = status.providers.filter((p) => p.available)
-  const readers = [...new Set(usable.flatMap((p) => p.readers || []))]
+  // Readers of usable providers first: they are the ones named.
+  const readers = [...new Set([...usable, ...status.providers].flatMap((p) => p.readers || []))]
   if (status.ready) {
     card.dataset.state = "ready"
     $("card-text").textContent = readers.length ? `Card detected on ${readers[0]}` : "Card detected"
-  } else if (usable.length && readers.length) {
-    card.dataset.state = "waiting"
-    $("card-text").textContent = `Place your CIE on the reader (${readers[0]})`
-  } else if (usable.length) {
+  } else if (!readers.length) {
     card.dataset.state = "waiting"
     $("card-text").textContent = "Connect the NFC card reader"
+  } else if (usable.length) {
+    card.dataset.state = "waiting"
+    $("card-text").textContent = `Place your CIE on the reader (${readers[0]})`
   } else {
     card.dataset.state = "waiting"
     $("card-text").textContent = "No CIE software found. See the setup guide in the dashboard."

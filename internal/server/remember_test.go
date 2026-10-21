@@ -43,7 +43,7 @@ func (r *reader) swap(t *testing.T) {
 func (r *reader) Name() string { return "reader" }
 func (r *reader) Status(context.Context) token.Status {
 	present := r.present.Load()
-	return token.Status{Provider: "reader", Available: true, CardPresent: &present}
+	return token.Status{Provider: "reader", Available: true, Readers: []string{"reader"}, CardPresent: &present}
 }
 func (r *reader) Open(ctx context.Context, pin string) (token.Session, error) {
 	r.opened.Add(1)

@@ -13,6 +13,7 @@ import (
 	"github.com/PoliNetworkOrg/esign/internal/config"
 	"github.com/PoliNetworkOrg/esign/internal/install"
 	"github.com/PoliNetworkOrg/esign/internal/launch"
+	"github.com/PoliNetworkOrg/esign/internal/token"
 	"github.com/PoliNetworkOrg/esign/internal/token/worker"
 )
 
@@ -85,11 +86,14 @@ func doctor(ctx context.Context, w io.Writer, cfg config.Config, configPath, dir
 			}
 		}
 		sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		st := s.Provider.Status(sctx)
+		st, err := token.SafeStatus(sctx, s.Provider)
 		cancel()
 		fmt.Fprintf(w, "    available: %v\n", st.Available)
 		if st.Detail != "" {
 			fmt.Fprintf(w, "    detail:    %s\n", st.Detail)
+		}
+		if err != nil {
+			fmt.Fprintf(w, "    error:     %v\n", err)
 		}
 		if st.Available && len(st.Readers) == 0 {
 			fmt.Fprintln(w, "    readers:   none")
