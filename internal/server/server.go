@@ -43,6 +43,8 @@ var pages = template.Must(template.ParseFS(webFS, "web/*.html"))
 type pageData struct {
 	// Version is the agent's version as people read it: "0.4.0" for the release tagged v0.4.0, or "dev".
 	Version string
+	// Dashboard is the signing page's origin parameter when the agent signs for it: the page's messages go there only.
+	Dashboard string
 }
 
 // shownVersion drops the "v" of a release tag.
@@ -235,8 +237,12 @@ func (s *Server) guard(next http.Handler) http.Handler {
 
 func (s *Server) page(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		data := pageData{Version: shownVersion(s.opts.Version)}
+		if origin := r.URL.Query().Get("origin"); OriginAllowed(s.opts.AllowedOrigins, origin) {
+			data.Dashboard = origin
+		}
 		var page bytes.Buffer
-		if err := pages.ExecuteTemplate(&page, name, pageData{Version: shownVersion(s.opts.Version)}); err != nil {
+		if err := pages.ExecuteTemplate(&page, name, data); err != nil {
 			s.opts.Logger.Error("render page", "page", name, "error", err)
 			http.Error(w, "PoliNetwork eSign could not show this page.", http.StatusInternalServerError)
 			return

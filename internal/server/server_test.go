@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -243,6 +244,25 @@ func TestPagesShowTheVersion(t *testing.T) {
 			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), footer) {
 				t.Errorf("%s with version %q: %d, no %q in\n%s", path, version, rec.Code, footer, rec.Body)
 			}
+		}
+	}
+}
+
+// TestSignPageDashboard: the signing page posts its messages, the first one before any request, only to a dashboard
+// the agent signs for, which the agent names in the page.
+func TestSignPageDashboard(t *testing.T) {
+	s, _, _ := setup(t)
+	cases := map[string]string{
+		"/sign?origin=" + url.QueryEscape(dashboard) + "&ticket=" + ticket: dashboard,
+		"/sign?origin=" + url.QueryEscape(dashboard):                       dashboard,
+		"/sign?origin=" + url.QueryEscape("https://evil.example"):          "",
+		"/sign?origin=" + url.QueryEscape(`"><script>`):                    "",
+		"/sign": "",
+	}
+	for path, want := range cases {
+		page := do(t, s, req{method: "GET", path: path}).Body.String()
+		if attrs := `data-version="test" data-dashboard="` + want + `"`; !strings.Contains(page, attrs) {
+			t.Errorf("%s: no %s in\n%s", path, attrs, page)
 		}
 	}
 }

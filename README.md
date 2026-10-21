@@ -283,6 +283,17 @@ repeats are dropped). The page talks only to the agent:
 The agent calls the dashboard's `/api/esign/agent/jobs/{ticket}[/prepare|/complete|/fail]` with each ticket. A backend
 older than protocol 2 sends no steps, and its jobs are signed once.
 
+The page tells the dashboard what happens with `postMessage({type: "pn-esign", status, detail, …})`, only to the
+`origin` of its address and only when the agent signs for it: the agent checks the origin when it serves the page, so
+the page knows where it may post before making any request.
+
+- `ready`, first thing when the page runs, with the agent's version in `detail` (`0.4.0`, or `dev`). A dashboard that
+  gets no `ready` can tell that the agent is not running.
+- `error`, with the error code in `detail`. When the window cannot go on (the link is not valid, the jobs could not be
+  loaded or expired, the card cannot be used, …) the message also has `message`, the text the window shows, and
+  `fatal: true`.
+- `completed` when every document was signed, `cancelled` when the signer cancelled.
+
 Builds:
 
 ```sh

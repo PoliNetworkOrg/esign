@@ -1,16 +1,24 @@
 "use strict"
 
 // The dashboard opens /sign?origin=…&ticket=…[&ticket=…] in a popup, one ticket per document. The tickets are moved
-// to sessionStorage and removed from the address bar, so they do not stay in the history.
+// to sessionStorage and removed from the address bar, so they do not stay in the history. The origin stays there, so
+// that the agent can check it again when the page is reloaded.
 const MAX_TICKETS = 10
 const params = new URLSearchParams(location.search)
 if (params.has("ticket")) {
   sessionStorage.setItem("tickets", JSON.stringify([...new Set(params.getAll("ticket"))]))
-  sessionStorage.setItem("origin", params.get("origin") || "")
-  history.replaceState(null, "", "/sign")
+  history.replaceState(null, "", `/sign?${new URLSearchParams({ origin: params.get("origin") || "" })}`)
 }
 const tickets = readTickets()
-const origin = sessionStorage.getItem("origin") || ""
+const origin = params.get("origin") || ""
+/**
+ * Where the page's messages go: origin when the agent signs for it, "" otherwise. The agent checked it when serving
+ * the page, so even the first message, sent before any request, reaches an allowed dashboard only.
+ */
+const dashboard = document.documentElement.dataset.dashboard || ""
+
+// First thing, before any request: a window that stays silent tells the dashboard that the agent is not running.
+notify("ready", document.documentElement.dataset.version)
 
 const $ = (id) => document.getElementById(id)
 
@@ -53,10 +61,14 @@ function show(id) {
   for (const s of sections) $(s).hidden = s !== id
 }
 
-/** Tells the dashboard what happened; the dashboard also polls its backend, so this is only a shortcut. */
-function notify(status, detail) {
+/**
+ * Tells the dashboard what happened, with any other fields of the message; the dashboard also polls its backend, so
+ * this is only a shortcut.
+ */
+function notify(status, detail, fields) {
+  if (!window.opener || !dashboard) return
   try {
-    if (window.opener && origin) window.opener.postMessage({ type: "pn-esign", status, detail }, origin)
+    window.opener.postMessage({ type: "pn-esign", status, detail, ...fields }, dashboard)
   } catch {
     // The opener navigated away or is cross-origin isolated: polling covers it.
   }
@@ -83,9 +95,13 @@ async function api(path, body) {
 
 const START_AGAIN = "Close this window and start again from the dashboard."
 
-/** Ends the page on message, followed by hint ("" for none) and, with setup, a link to the dashboard's setup guide. */
-function fatal(message, { hint = START_AGAIN, setup = false } = {}) {
+/**
+ * Ends the page on message, followed by hint ("" for none) and, with setup, a link to the dashboard's setup guide. The
+ * dashboard learns it as a fatal error with code, so it explains it instead of waiting for the window.
+ */
+function fatal(message, { code = "internal", hint = START_AGAIN, setup = false } = {}) {
   stopPolling()
+  notify("error", code, { message, fatal: true })
   $("fatal-message").textContent = message
   $("fatal-hint").textContent = hint
   $("fatal-hint").hidden = !hint
@@ -123,7 +139,7 @@ const errorText = (error) => (error?.code === "job_expired" ? "This signing link
 function fatalError(error) {
   const setup = SETUP.has(error?.code)
   const hint = setup || EXPLAINED.has(error?.code) ? "" : START_AGAIN
-  fatal(errorText(error) || "The signature failed.", { hint, setup })
+  fatal(errorText(error) || "The signature failed.", { code: error?.code, hint, setup })
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
@@ -194,20 +210,22 @@ function describeResult(li, doc) {
 }
 
 async function load() {
-  if (!tickets.length || !origin) return fatal("This page needs a signing link from the dashboard.")
-  if (tickets.length > MAX_TICKETS) return fatal(`Sign at most ${MAX_TICKETS} documents at a time.`)
+  if (!tickets.length || !origin)
+    return fatal("This page needs a signing link from the dashboard.", { code: "ticket_invalid" })
+  if (tickets.length > MAX_TICKETS)
+    return fatal(`Sign at most ${MAX_TICKETS} documents at a time.`, { code: "too_many_tickets" })
   if (tickets.length > 1) $("loading-text").textContent = "Loading the documents…"
   try {
     ;({ jobs: docs, remembered, rememberMinutes = 0 } = await api("/api/job", { tickets, origin }))
   } catch (error) {
-    return fatal(error.message || "Cannot load the document.")
+    return fatal(error.message || "Cannot load the document.", { code: error.code })
   }
   for (const doc of docs) if (!doc.job) outcome.set(doc.ticket, { status: "failed", error: doc.error })
   const ready = docs.filter((d) => d.job)
   if (!ready.length) {
     if (docs.length === 1) return fatalError(docs[0].error)
     fillList($("fatal-docs"), docs, describeDoc)
-    return fatal("None of these documents can be signed.")
+    return fatal("None of these documents can be signed.", { code: docs[0].error?.code })
   }
   showForm(docs, ready.map((d) => d.ticket))
 }
@@ -312,7 +330,6 @@ async function checkExpiry() {
   const expired = jobs.filter((d) => pending.includes(d.ticket) && d.error?.code === "job_expired").map((d) => d.ticket)
   const left = pending.filter((t) => !expired.includes(t))
   if (!left.length) {
-    notify("error", "job_expired")
     fatalError({ code: "job_expired" })
     return
   }
@@ -370,16 +387,16 @@ function showResults() {
   const signed = docs.filter((d) => outcome.get(d.ticket)?.status === "completed").length
   const all = signed === docs.length
   const again = retryable()
-  notify(all ? "completed" : "error", all ? undefined : docs.map((d) => outcome.get(d.ticket)?.error?.code).find(Boolean))
+  const failed = docs.map((d) => outcome.get(d.ticket)?.error?.code).find(Boolean)
 
-  if (docs.length === 1) {
+  if (docs.length === 1 && !all) {
     const result = outcome.get(docs[0].ticket)
-    if (!all) {
-      // One document: an error that retrying can fix goes back to the PIN, anything else ends here, as before.
-      if (again.length) return showForm(docs, [docs[0].ticket], result.error.message)
-      return fatalError(result.error)
-    }
+    // One document: an error that retrying can fix goes back to the PIN, anything else ends here.
+    if (!again.length) return fatalError(result.error)
+    notify("error", failed)
+    return showForm(docs, [docs[0].ticket], result.error.message)
   }
+  notify(all ? "completed" : "error", all ? undefined : failed)
 
   $("done-icon").textContent = all ? "✓" : "!"
   $("done-icon").classList.toggle("bad", !all)
@@ -431,10 +448,7 @@ $("form").addEventListener("submit", async (event) => {
     result = await api("/api/sign", body)
   } catch (error) {
     signing = false
-    if (JOB_ENDED.has(error.code) || TERMINAL.has(error.code)) {
-      notify("error", error.code)
-      return fatalError(error)
-    }
+    if (JOB_ENDED.has(error.code) || TERMINAL.has(error.code)) return fatalError(error)
     // After a failure the agent no longer remembers the PIN, unless the card was busy and was never tried.
     if (error.code !== "busy") remembered = null
     show("form")
