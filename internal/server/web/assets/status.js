@@ -5,7 +5,7 @@
 const SOFTWARE = {
   "cie-mw": "CIE ID",
   opencie: "OpenCIE",
-  cie: "Built into PoliNetwork eSign",
+  cie: "PoliNetwork eSign (built in)",
   soft: "Development key (signatures not valid)",
 }
 
@@ -21,7 +21,7 @@ function describeStatus(status) {
   const signing = available.find((p) => p.cardPresent !== false) || available[0]
   const name = signing && (SOFTWARE[signing.provider] || signing.provider)
   const software = signing
-    ? { ok: true, text: name, name }
+    ? { ok: true, text: `Signing software: ${name}`, name }
     : {
         ok: false,
         text: "Signing software not available",
