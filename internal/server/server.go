@@ -300,11 +300,11 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) (*jobRequest, Ba
 		valid = valid && backend.TicketPattern.MatchString(t)
 	}
 	if !valid {
-		writeError(w, http.StatusBadRequest, "ticket_invalid", "This signing link is not valid. Start again from the dashboard.")
+		writeError(w, http.StatusBadRequest, "ticket_invalid", "This signing link is not valid.")
 		return nil, nil, false
 	}
 	if len(req.Tickets) > MaxTickets {
-		writeError(w, http.StatusBadRequest, "too_many_tickets", "Sign at most "+strconv.Itoa(MaxTickets)+" documents at a time. Start again from the dashboard.")
+		writeError(w, http.StatusBadRequest, "too_many_tickets", "Sign at most "+strconv.Itoa(MaxTickets)+" documents at a time.")
 		return nil, nil, false
 	}
 	if !OriginAllowed(s.opts.AllowedOrigins, req.Origin) {

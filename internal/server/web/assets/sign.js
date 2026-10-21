@@ -26,6 +26,8 @@ let signing = false
 let docs = []
 /** Tickets the PIN form signs. */
 let pending = []
+/** When the first of the pending jobs expires (ms since the epoch), Infinity when unknown. */
+let deadline = Infinity
 /** What happened to each ticket: { status, error }. */
 const outcome = new Map()
 let signer = ""
@@ -108,11 +110,14 @@ const EXPLAINED = new Set(["job_done", "job_cancelled", "document_changed", "job
 /** Card errors after which the same documents can be signed again. */
 const RETRYABLE = new Set(["card_removed", "device_error", "no_card", "no_reader"])
 
+/** The page's own words for an expired link, the same however the expiry was noticed. */
+const errorText = (error) => (error?.code === "job_expired" ? "This signing link expired." : error?.message)
+
 /** Ends the page on an error that leaves nothing to sign here. */
 function fatalError(error) {
   const setup = SETUP.has(error?.code)
   const hint = setup || EXPLAINED.has(error?.code) ? "" : START_AGAIN
-  fatal(error?.message || "The signature failed.", { hint, setup })
+  fatal(errorText(error) || "The signature failed.", { hint, setup })
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
@@ -155,7 +160,7 @@ function describeDoc(li, doc) {
   li.append(title)
   if (!doc.job) {
     li.classList.add("failed")
-    line(li, doc.error.message, "bad")
+    line(li, errorText(doc.error), "bad")
     return
   }
   const by = [doc.job.requestedBy && `Requested by ${doc.job.requestedBy}`, doc.job.signer.role].filter(Boolean)
@@ -175,7 +180,7 @@ function describeResult(li, doc) {
   text.append(title)
   if (result.status === "completed") line(text, "Signed", "ok")
   else if (result.status === "skipped") line(text, "Not signed", "bad")
-  else line(text, result.error?.message || "Not signed", "bad")
+  else line(text, errorText(result.error) || "Not signed", "bad")
   li.classList.add("result")
   li.append(mark, text)
 }
@@ -202,6 +207,9 @@ async function load() {
 /** Shows the PIN form for the tickets to sign, listing the given documents. */
 function showForm(listed, toSign, message = "") {
   pending = toSign
+  // Go sends a missing time as year 1.
+  const expiries = docs.filter((d) => pending.includes(d.ticket)).map((d) => Date.parse(d.job.expiresAt))
+  deadline = Math.min(...expiries.filter((t) => t > 0))
   const several = docs.length > 1
   const n = pending.length
   $("facts").hidden = several
@@ -269,8 +277,19 @@ function stopPolling() {
   clearInterval(pollTimer)
 }
 
+/**
+ * Shows the expiry screen once the PIN form outlives a pending job, without cancelling the jobs: the dashboard then
+ * says they expired. A signature already running is left to finish, and the backend decides.
+ */
+function checkExpiry() {
+  if (signing || $("form").hidden || Date.now() < deadline) return false
+  notify("error", "job_expired")
+  fatalError({ code: "job_expired" })
+  return true
+}
+
 async function pollStatus() {
-  if (signing) return
+  if (signing || checkExpiry()) return
   const card = $("card")
   let status
   try {
@@ -424,5 +443,10 @@ $("retry").addEventListener("click", () => {
 })
 
 for (const button of document.querySelectorAll("[data-close]")) button.addEventListener("click", () => window.close())
+
+// Timers slow down in a covered window or a sleeping laptop: check again as soon as the window shows.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkExpiry()
+})
 
 load()
