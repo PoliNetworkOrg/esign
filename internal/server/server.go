@@ -662,11 +662,10 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		started := time.Now()
-		n, err := signJob(ctx, be, session, chain, ticket)
-		if n > 0 {
-			// The backend accepted the card as this signer's: the PIN that worked was typed for it.
+		n, err := signJob(ctx, be, session, chain, ticket, func() {
+			// The PIN opened a card that the backend accepts as this signer's: the card counts its attempts afresh.
 			s.pins.forget([]string{signerKey(req.Origin, job)})
-		}
+		})
 		if err == nil {
 			results[i].Status = "completed"
 			s.opts.Logger.Info("signed", "provider", provider.Name(), "signer", info.DisplayName, "job", job.ID, "signatures", n, "duration", time.Since(started).Round(time.Millisecond))
@@ -680,7 +679,8 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 			stop = e
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": results, "signer": info})
+	// The attempts left after this PIN, so that a form shown again does not warn about attempts the card restored.
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "signer": info, "attempts": s.pins.get(signers)})
 }
 
 // codePINRequired answers a signature without a PIN when none is remembered, or no longer usable.
@@ -692,8 +692,9 @@ type cardError struct{ error }
 func (e cardError) Unwrap() error { return e.error }
 
 // signJob adds the job's signatures one at a time (prepare, sign with the card, complete) until the backend says
-// the job is complete, and returns how many it added.
-func signJob(ctx context.Context, be Backend, session token.Session, chain [][]byte, ticket string) (int, error) {
+// the job is complete, and returns how many it added. accepted runs once the backend accepts the card's certificate
+// for the job's signer, at the first prepare.
+func signJob(ctx context.Context, be Backend, session token.Session, chain [][]byte, ticket string, accepted func()) (int, error) {
 	cert := session.Certificate()
 	steps := 0
 	for n := 0; ; n++ {
@@ -703,6 +704,7 @@ func signJob(ctx context.Context, be Backend, session token.Session, chain [][]b
 		}
 		if n == 0 {
 			steps = p.Steps
+			accepted()
 		}
 		// The card signs only as many digests as the backend announced at the start.
 		if n >= steps {

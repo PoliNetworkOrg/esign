@@ -25,7 +25,8 @@ type attempts struct {
 //
 // The count belongs to the person the dashboard asks to sign, whose card the PIN was typed for: another person
 // signing on this computer starts without a warning, while the same person with a new card is warned until a PIN
-// works, which errs on the safe side. It is kept in memory only, until the agent stops.
+// opens a card that the backend accepts as theirs, which errs on the safe side. It is kept in memory only, until the
+// agent stops.
 type wrongPINs struct {
 	mu sync.Mutex
 	by map[string]attempts

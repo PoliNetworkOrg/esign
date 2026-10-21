@@ -557,6 +557,8 @@ $("form").addEventListener("submit", async (event) => {
   }
   signing = false
   if (result.signer?.displayName) signer = result.signer.displayName
+  // Absent when no document was left to sign, so the PIN was not used.
+  if (result.attempts !== undefined) attempts = result.attempts
   for (const r of result.results || []) outcome.set(r.ticket, r)
   showResults()
 })

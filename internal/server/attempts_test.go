@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/PoliNetworkOrg/esign/internal/backend"
@@ -138,13 +139,35 @@ func TestWrongPINsKeptForAnotherCard(t *testing.T) {
 	s := newServer(fb, muteCard(t))
 	signRequest(t, s, "00000000", ticket)
 	fb.prepareErr = map[string]error{ticket: &backend.Error{Status: 403, Code: "signer_mismatch", Message: "This CIE belongs to someone else."}}
-	if rec, res := signRequest(t, s, "12345678", ticket); rec.Code != http.StatusOK || statuses(res)[0] != "failed:signer_mismatch" {
+	rec, res := signRequest(t, s, "12345678", ticket)
+	if rec.Code != http.StatusOK || statuses(res)[0] != "failed:signer_mismatch" {
 		t.Fatalf("other card: %d %s", rec.Code, rec.Body)
 	}
+	wantAttempts(t, "answer to another card", attemptsOf(t, rec), &attempts{Left: 2})
 	wantAttempts(t, "after another card", jobAttempts(t, s, ticket), &attempts{Left: 2})
 	fb.prepareErr = nil
 	signRequest(t, s, "12345678", ticket)
 	wantAttempts(t, "after the signer's card", jobAttempts(t, s, ticket), nil)
+}
+
+// TestWrongPINsClearedByTheSignersCard: a PIN that opens a card the backend accepts for the signer clears the count
+// even when the signature then fails, and the answer says so, for the form shown again.
+func TestWrongPINsClearedByTheSignersCard(t *testing.T) {
+	p, err := soft.New("12345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The card moves away at the first signature.
+	s := newServer(&fakeBackend{}, &flaky{Provider: p})
+	signRequest(t, s, "00000000", ticket)
+	rec, _ := signRequest(t, s, "00000000", ticket)
+	wantAttempts(t, "second wrong PIN", attemptsOf(t, rec), &attempts{Left: 1, Card: true})
+	rec, res := signRequest(t, s, "12345678", ticket)
+	if rec.Code != http.StatusOK || !slices.Equal(statuses(res), []string{"failed:card_removed"}) {
+		t.Fatalf("right PIN: %d %s", rec.Code, rec.Body)
+	}
+	wantAttempts(t, "answer to the right PIN", attemptsOf(t, rec), nil)
+	wantAttempts(t, "page opened again", jobAttempts(t, s, ticket), nil)
 }
 
 // TestWrongPINsNeverZero: a card that refuses a PIN without blocking it has an attempt left, whatever the count missed.
