@@ -26,8 +26,10 @@ let signing = false
 let docs = []
 /** Tickets the PIN form signs. */
 let pending = []
-/** When the first of the pending jobs expires (ms since the epoch), Infinity when unknown. */
+/** When the first of the pending jobs expires by this computer's clock (ms since the epoch), Infinity when unknown. */
 let deadline = Infinity
+/** Whether the agent is asking the backend if the pending jobs expired. */
+let checkingExpiry = false
 /** What happened to each ticket: { status, error }. */
 const outcome = new Map()
 let signer = ""
@@ -277,19 +279,36 @@ function stopPolling() {
   clearInterval(pollTimer)
 }
 
+/** How long the PIN form stays before asking the backend again whether the pending jobs expired. */
+const EXPIRY_RECHECK = 30_000
+
 /**
- * Shows the expiry screen once the PIN form outlives a pending job, without cancelling the jobs: the dashboard then
- * says they expired. A signature already running is left to finish, and the backend decides.
+ * Once this computer's clock says a pending job expired, asks the backend, which decides: a clock running fast must
+ * not end the window early. Shows the expiry screen only when the backend confirms, without cancelling the jobs (the
+ * dashboard then says they expired); otherwise asks again later. A signature already running is left to finish.
  */
-function checkExpiry() {
-  if (signing || $("form").hidden || Date.now() < deadline) return false
-  notify("error", "job_expired")
-  fatalError({ code: "job_expired" })
-  return true
+async function checkExpiry() {
+  if (signing || checkingExpiry || $("form").hidden || Date.now() < deadline) return
+  checkingExpiry = true
+  let jobs = []
+  try {
+    ;({ jobs = [] } = await api("/api/job", { tickets: pending, origin }))
+  } catch {
+    // Neither the agent nor the backend says the jobs expired: ask again later.
+  }
+  checkingExpiry = false
+  if (signing || $("form").hidden) return
+  if (jobs.some((d) => pending.includes(d.ticket) && d.error?.code === "job_expired")) {
+    notify("error", "job_expired")
+    fatalError({ code: "job_expired" })
+    return
+  }
+  deadline = Date.now() + EXPIRY_RECHECK
 }
 
 async function pollStatus() {
-  if (signing || checkExpiry()) return
+  if (signing) return
+  checkExpiry()
   const card = $("card")
   let status
   try {
