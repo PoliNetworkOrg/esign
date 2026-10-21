@@ -380,6 +380,43 @@ a:focus-visible {
   font-size: 13px;
 }
 
+.hint.bad {
+  color: var(--danger-fg);
+}
+
+input[aria-invalid="true"] {
+  border-color: var(--danger-fg);
+}
+
+/* Before the last PIN attempt, above the field, so it is read before typing. */
+.warning {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: 14px;
+}
+
+.warning span {
+  text-wrap: pretty;
+}
+
+.warning-icon {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .check-row {
   display: flex;
   align-items: center;

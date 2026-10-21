@@ -163,7 +163,10 @@ When the dashboard no longer accepts your version of PoliNetwork eSign, the wind
 PIN, with the download for your system: open the downloaded file and it replaces the old version.
 
 A wrong PIN uses one of the card's three attempts; the agent never retries a PIN by itself. After three wrong PINs the
-card is blocked: unblock it with the PUK in CIE ID.
+card is blocked: unblock it with the PUK in CIE ID. The agent counts the wrong PINs typed in a row for each signer, even
+when the window is closed and opened again, and uses the attempts left that the card reports when it reports them (CIE
+ID's middleware does not). Before the last attempt the window warns above the PIN field and does not offer to remember
+the PIN. A signature with the signer's card clears the count; it is kept in memory only, until the agent stops.
 
 ## Troubleshooting
 
@@ -282,11 +285,14 @@ repeats are dropped). The page talks only to the agent:
   `absent` when no provider could be tried, so a signature would fail before the PIN is sent (no reader, no card, no
   CIE software), and `unknown` when a provider that cannot tell would be tried. The page takes the PIN only when it
   is not `absent`, and waits for two answers in a row without the card before it holds the PIN back again;
-- `POST /api/job` `{tickets, origin}` returns `{jobs: [{ticket, job} | {ticket, error}]}`;
+- `POST /api/job` `{tickets, origin}` returns `{jobs: [{ticket, job} | {ticket, error}], attempts}`. `attempts` is
+  `{left, card}` when one of the jobs' signers typed a wrong PIN since their last signature: the attempts left before
+  the card blocks the PIN, as the card reported them (`card: true`) or as the agent counted them, which misses wrong
+  PINs typed in other apps; `null` otherwise;
 - `POST /api/sign` `{tickets, origin, pin}` opens one card session and, for each job in order, repeats
   `prepare` (with `protocol: 2`), card signature and `complete` until the backend answers `completed`. It returns
   `{results: [{ticket, status: completed | failed | skipped, error?}], signer}`. If the session does not open (wrong
-  PIN, no card) it returns that error and reports it on every job;
+  PIN, no card) it returns that error and reports it on every job; a wrong PIN's error has `attempts` too;
 - `POST /api/cancel` `{tickets, origin}` reports the jobs as cancelled.
 
 The agent calls the dashboard's `/api/esign/agent/jobs/{ticket}[/prepare|/complete|/fail]` with each ticket. A backend

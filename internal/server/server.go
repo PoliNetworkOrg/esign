@@ -99,6 +99,8 @@ type Server struct {
 	// memMu guards mem, the PIN the user chose to remember (see remember.go). Lock it after card, never before.
 	memMu sync.Mutex
 	mem   *remembered
+
+	pins wrongPINs
 }
 
 // New returns a server.
@@ -460,7 +462,14 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	res := map[string]any{"jobs": fetchJobs(ctx, be, req.Tickets), "remembered": s.rememberedFor(r)}
+	jobs := fetchJobs(ctx, be, req.Tickets)
+	var signers []string
+	for _, j := range jobs {
+		if j.Job != nil {
+			signers = append(signers, signerKey(req.Origin, j.Job))
+		}
+	}
+	res := map[string]any{"jobs": jobs, "remembered": s.rememberedFor(r), "attempts": s.pins.get(signers)}
 	if s.opts.RememberFor > 0 {
 		res["rememberMinutes"] = int(s.opts.RememberFor / time.Minute)
 	}
@@ -553,7 +562,7 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.PIN != "" && !token.ValidPIN(req.PIN, 8) {
-		writeTokenError(w, token.Errorf(token.CodePinInvalid, "malformed PIN"))
+		writeTokenError(w, token.Errorf(token.CodePinInvalid, "malformed PIN"), nil)
 		return
 	}
 	// A status check or the card watcher holds the card only briefly: wait for it rather than refusing the PIN.
@@ -578,6 +587,7 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 	cancelFetch()
 	results := make([]signResult, len(jobs))
 	var todo []int
+	var signers []string
 	signatures := 0
 	for i, j := range jobs {
 		if j.Error != nil {
@@ -586,6 +596,7 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 		}
 		results[i] = signResult{Ticket: j.Ticket, Status: "skipped"}
 		todo = append(todo, i)
+		signers = append(signers, signerKey(req.Origin, j.Job))
 		signatures += max(j.Job.Signatures, 1)
 	}
 	if len(todo) == 0 {
@@ -609,7 +620,14 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 		for _, i := range todo {
 			s.fail(ctx, be, jobs[i].Ticket, string(code), messageOf[code])
 		}
-		writeTokenError(w, err)
+		var left *attempts
+		switch code {
+		case token.CodePinIncorrect:
+			left = s.pins.wrong(signers, retriesLeft(err))
+		case token.CodePinLocked:
+			s.pins.forget(signers)
+		}
+		writeTokenError(w, err, left)
 		return
 	}
 	defer session.Close()
@@ -645,6 +663,10 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 		}
 		started := time.Now()
 		n, err := signJob(ctx, be, session, chain, ticket)
+		if n > 0 {
+			// The backend accepted the card as this signer's: the PIN that worked was typed for it.
+			s.pins.forget([]string{signerKey(req.Origin, job)})
+		}
 		if err == nil {
 			results[i].Status = "completed"
 			s.opts.Logger.Info("signed", "provider", provider.Name(), "signer", info.DisplayName, "job", job.ID, "signatures", n, "duration", time.Since(started).Round(time.Millisecond))
@@ -748,21 +770,21 @@ var messageOf = map[token.Code]string{
 	token.CodeNotFound:          "No signing certificate found on the card.",
 	token.CodePinIncorrect:      "Wrong PIN.",
 	token.CodePinInvalid:        "Type the 8 digits of your CIE PIN.",
-	token.CodePinLocked:         "Your CIE PIN is blocked. Unblock it with your PUK in the CieID app on your phone or in CIE ID on this computer, then sign again from the dashboard. The PUK’s first half is on the receipt from the Comune, the second half in the letter that came with the card.",
+	token.CodePinLocked:         "Your CIE PIN is blocked. Unblock it with your PUK in the CieID app on your phone or in CIE ID on this computer, then sign again from the dashboard.",
 	token.CodeBusy:              "Another signature is in progress.",
 	token.CodeDevice:            "The card could not complete the operation. Try again.",
 }
 
-func writeTokenError(w http.ResponseWriter, err error) {
+// writeTokenError answers a card error, with the attempts left after a wrong PIN.
+func writeTokenError(w http.ResponseWriter, err error, left *attempts) {
 	code := token.CodeOf(err)
 	status, ok := statusOf[code]
 	if !ok {
 		status = http.StatusBadGateway
 	}
 	body := map[string]any{"code": string(code), "message": messageOf[code]}
-	var te *token.Error
-	if errors.As(err, &te) && code == token.CodePinIncorrect && te.RetriesLeft >= 0 {
-		body["retriesLeft"] = te.RetriesLeft
+	if left != nil {
+		body["attempts"] = left
 	}
 	writeJSON(w, status, map[string]any{"error": body})
 }

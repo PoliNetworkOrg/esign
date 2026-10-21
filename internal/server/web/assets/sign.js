@@ -48,6 +48,12 @@ let remembered = null
 /** How long the agent remembers a PIN on request, 0 when it does not offer to. */
 let rememberMinutes = 0
 /**
+ * The PIN attempts left before the card blocks the PIN, { left, card }, as the card reported them (card) or as the
+ * agent counted wrong PINs on this computer, even in windows closed since; null when no wrong PIN is on record.
+ */
+let attempts = null
+const lastAttempt = () => attempts !== null && attempts.left <= 1
+/**
  * What the agent says about the card: "checking" until it answers, then "present", "absent" (a signature would fail
  * before the PIN is sent) or "unknown" (it cannot tell). The PIN and Sign wait while the card is checked for or absent,
  * so that nobody types a PIN for a card that is not there; "unknown" never holds them back.
@@ -246,7 +252,7 @@ async function load() {
     return fatal(`Sign at most ${MAX_TICKETS} documents at a time.`, { code: "too_many_tickets" })
   if (tickets.length > 1) $("loading-text").textContent = "Loading the documents…"
   try {
-    ;({ jobs: docs, remembered, rememberMinutes = 0 } = await api("/api/job", { tickets, origin }))
+    ;({ jobs: docs, remembered, rememberMinutes = 0, attempts = null } = await api("/api/job", { tickets, origin }))
   } catch (error) {
     return fatal(error.message || "Cannot load the document.", { code: error.code })
   }
@@ -267,6 +273,7 @@ function showForm(list, toSign, message = "") {
   $("pin").value = ""
   $("remember").checked = false
   formError(message)
+  pinError("")
   show("form")
   showPIN()
   startPolling()
@@ -312,9 +319,14 @@ function showPIN() {
     $("remembered-text").textContent =
       `Your PIN is remembered${remembered.signer ? ` for ${remembered.signer}` : ""} until ${until}, while the CIE stays on the reader.`
   } else {
-    $("remember-row").hidden = !rememberMinutes
+    // The last attempt is no time to remember a PIN that may be wrong.
+    $("remember-row").hidden = !rememberMinutes || lastAttempt()
+    if (lastAttempt()) $("remember").checked = false
     $("remember-text").textContent = `Remember the PIN on this computer for ${rememberMinutes} minutes`
   }
+  const warn = !known && lastAttempt()
+  $("last-attempt").hidden = !warn
+  $("pin").setAttribute("aria-describedby", warn ? "last-attempt pin-hint" : "pin-hint")
   if (cardReady()) focusNext()
 }
 
@@ -431,6 +443,25 @@ function formError(message) {
   $("error").hidden = !message
 }
 
+const PIN_HINT = $("pin-hint").textContent
+/** Errors about the PIN itself, shown under its field. */
+const PIN_ERRORS = new Set(["pin_incorrect", "pin_invalid", "pin_required"])
+
+/** Shows message under the PIN field, in place of its hint; "" puts the hint back. */
+function pinError(message) {
+  setText($("pin-hint"), message || PIN_HINT)
+  $("pin-hint").classList.toggle("bad", Boolean(message))
+  if (message) $("pin").setAttribute("aria-invalid", "true")
+  else $("pin").removeAttribute("aria-invalid")
+}
+
+/** What to say under the field after a wrong PIN. The count of this computer can miss wrong PINs typed elsewhere. */
+function wrongPIN() {
+  if (lastAttempt()) return "Wrong PIN."
+  if (attempts?.card) return `Wrong PIN. ${attempts.left} attempts left.`
+  return "Wrong PIN. Three wrong PINs in a row block your CIE."
+}
+
 /** Documents that failed on a card error and can be signed again with the PIN. */
 function retryable() {
   return docs.filter((d) => {
@@ -486,7 +517,7 @@ $("form").addEventListener("submit", async (event) => {
   if (!remembered) {
     const pin = $("pin").value.trim()
     if (!/^\d{8}$/.test(pin)) {
-      formError(
+      pinError(
         /^\d{4}$/.test(pin)
           ? "Type all 8 digits of your CIE PIN. Other CIE apps ask only for the last 4."
           : "Type the 8 digits of your CIE PIN.",
@@ -500,6 +531,7 @@ $("form").addEventListener("submit", async (event) => {
   // Cleared before the form goes away, so a browser watching the submission has nothing to offer to save.
   $("pin").value = ""
   formError("")
+  pinError("")
   signing = true
   $("working-title").textContent = pending.length === 1 ? "Signing…" : `Signing ${pending.length} documents…`
   show("working")
@@ -511,17 +543,13 @@ $("form").addEventListener("submit", async (event) => {
     if (JOB_ENDED.has(error.code) || TERMINAL.has(error.code)) return fatalError(error)
     // After a failure the agent no longer remembers the PIN, unless the card was busy and was never tried.
     if (error.code !== "busy") remembered = null
+    if (error.code === "pin_incorrect") attempts = error.attempts || attempts
     show("form")
     showPIN()
     $("pin").value = ""
-    let message = error.message || "The signature failed."
-    if (error.code === "pin_incorrect") {
-      message =
-        typeof error.retriesLeft === "number"
-          ? `Wrong PIN. ${error.retriesLeft} ${error.retriesLeft === 1 ? "attempt" : "attempts"} left before the PIN is blocked.`
-          : "Wrong PIN. After 3 wrong attempts the PIN is blocked and needs the PUK."
-    }
-    formError(message)
+    if (error.code === "pin_incorrect") pinError(wrongPIN())
+    else if (PIN_ERRORS.has(error.code)) pinError(error.message)
+    else formError(error.message || "The signature failed.")
     // Asking for the PIN is not a failure of the signature.
     if (error.code !== "pin_required") notify("error", error.code)
     return

@@ -48,6 +48,7 @@ type failure struct{ ticket, code string }
 type fakeBackend struct {
 	mu         sync.Mutex
 	steps      map[string]int
+	signer     map[string]string
 	jobErr     map[string]error
 	prepareErr map[string]error
 	cert       []byte
@@ -72,6 +73,7 @@ func (f *fakeBackend) Job(_ context.Context, t string) (*backend.Job, error) {
 	}
 	job := &backend.Job{ID: "job-" + t[:1], Status: "pending", Signatures: f.stepsOf(t)}
 	job.Document.Title = "Verbale"
+	job.Signer.Name = f.signer[t]
 	return job, nil
 }
 
@@ -383,14 +385,7 @@ func verify(t *testing.T, fb *fakeBackend, p *soft.Provider) {
 func TestSign(t *testing.T) {
 	s, fb, nc := setup(t)
 	rec, _ := signRequest(t, s, "00000000", ticket)
-	var failure struct {
-		Error struct {
-			Code        string `json:"code"`
-			RetriesLeft int    `json:"retriesLeft"`
-		} `json:"error"`
-	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &failure)
-	if rec.Code != http.StatusUnauthorized || failure.Error.Code != "pin_incorrect" || failure.Error.RetriesLeft != 2 {
+	if rec.Code != http.StatusUnauthorized || errorCode(rec) != "pin_incorrect" {
 		t.Fatalf("wrong PIN: %d %s", rec.Code, rec.Body)
 	}
 	if nc.opened != 1 {

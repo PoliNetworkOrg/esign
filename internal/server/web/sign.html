@@ -69,6 +69,14 @@
           <button type="button" class="link" id="forget">Use a different PIN</button>
         </div>
 
+        <p id="last-attempt" class="warning" hidden>
+          <svg class="warning-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10.3 4.2 2.6 17.6A2 2 0 0 0 4.3 20.6h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" />
+            <path d="M12 9.5v4.25M12 17.1v.01" />
+          </svg>
+          <span><strong>Last attempt.</strong> One more wrong PIN blocks your CIE.</span>
+        </p>
+
         <fieldset id="pin-fields" disabled>
           <label for="pin">CIE PIN</label>
           <input
@@ -90,10 +98,7 @@
             data-form-type="other"
             aria-describedby="pin-hint"
           />
-          <p id="pin-hint" class="hint">
-            All 8 digits: the first 4 are on the Comune’s receipt, the last 4 in the letter that came with the card. It
-            stays on this computer.
-          </p>
+          <p id="pin-hint" class="hint" aria-live="polite">8 digits. It stays on this computer.</p>
           <label id="remember-row" class="check-row" hidden>
             <input id="remember" type="checkbox" />
             <span id="remember-text"></span>
