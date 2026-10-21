@@ -75,9 +75,17 @@ async function api(path, body) {
   return data
 }
 
-function fatal(message) {
+const START_AGAIN = "Close this window and start again from the dashboard."
+
+/** Ends the page on message, followed by hint ("" for none) and, with setup, a link to the dashboard's setup guide. */
+function fatal(message, { hint = START_AGAIN, setup = false } = {}) {
   stopPolling()
   $("fatal-message").textContent = message
+  $("fatal-hint").textContent = hint
+  $("fatal-hint").hidden = !hint
+  // origin was accepted by the agent before any error that asks for the setup guide.
+  if (setup) $("fatal-setup").href = new URL("/dashboard/esign/setup", origin).href
+  $("fatal-setup-row").hidden = !setup
   show("fatal")
 }
 
@@ -87,11 +95,25 @@ const JOB_ENDED = new Set([
   "job_expired",
   "job_done",
   "job_cancelled",
+  "job_failed",
   "origin_forbidden",
   "signer_mismatch",
 ])
+/** Card errors that signing again from this window cannot fix. */
+const TERMINAL = new Set(["pin_locked", "card_untrusted", "middleware_missing", "not_paired", "certificate_not_found"])
+/** Errors that need this computer set up: the page links the setup guide. */
+const SETUP = new Set(["middleware_missing", "not_paired", "card_untrusted"])
+/** Errors whose message already says what to do next. */
+const EXPLAINED = new Set(["job_done", "job_cancelled", "document_changed", "job_failed", "pin_locked"])
 /** Card errors after which the same documents can be signed again. */
 const RETRYABLE = new Set(["card_removed", "device_error", "no_card", "no_reader"])
+
+/** Ends the page on an error that leaves nothing to sign here. */
+function fatalError(error) {
+  const setup = SETUP.has(error?.code)
+  const hint = setup || EXPLAINED.has(error?.code) ? "" : START_AGAIN
+  fatal(error?.message || "The signature failed.", { hint, setup })
+}
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 const pageList = new Intl.ListFormat("en-GB", { type: "conjunction" })
@@ -170,7 +192,7 @@ async function load() {
   for (const doc of docs) if (!doc.job) outcome.set(doc.ticket, { status: "failed", error: doc.error })
   const ready = docs.filter((d) => d.job)
   if (!ready.length) {
-    if (docs.length === 1) return fatal(docs[0].error.message)
+    if (docs.length === 1) return fatalError(docs[0].error)
     fillList($("fatal-docs"), docs, describeDoc)
     return fatal("None of these documents can be signed.")
   }
@@ -296,7 +318,7 @@ function showResults() {
     if (!all) {
       // One document: a card error goes back to the PIN, anything else ends here, as before.
       if (again.length) return showForm(docs, [docs[0].ticket], result.error.message)
-      return fatal(result.error?.message || "The signature failed.")
+      return fatalError(result.error)
     }
   }
 
@@ -344,7 +366,10 @@ $("form").addEventListener("submit", async (event) => {
     result = await api("/api/sign", body)
   } catch (error) {
     signing = false
-    if (JOB_ENDED.has(error.code)) return fatal(error.message)
+    if (JOB_ENDED.has(error.code) || TERMINAL.has(error.code)) {
+      notify("error", error.code)
+      return fatalError(error)
+    }
     // After a failure the agent no longer remembers the PIN, unless the card was busy and was never tried.
     if (error.code !== "busy") remembered = null
     show("form")

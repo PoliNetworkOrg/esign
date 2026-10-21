@@ -645,7 +645,7 @@ var messageOf = map[token.Code]string{
 	token.CodeNotFound:          "No signing certificate found on the card.",
 	token.CodePinIncorrect:      "Wrong PIN.",
 	token.CodePinInvalid:        "Type the 8 digits of your CIE PIN.",
-	token.CodePinLocked:         "Your PIN is blocked. Unblock it with the PUK in the CIE ID app.",
+	token.CodePinLocked:         "Your CIE PIN is blocked. Unblock it with your PUK in the CieID app on your phone or in CIE ID on this computer, then sign again from the dashboard. The PUK’s first half is on the receipt from the Comune, the second half in the letter that came with the card.",
 	token.CodeBusy:              "Another signature is in progress.",
 	token.CodeDevice:            "The card could not complete the operation. Try again.",
 }

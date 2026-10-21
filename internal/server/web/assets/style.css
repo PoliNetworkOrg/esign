@@ -269,7 +269,8 @@ input.masked {
 }
 
 input:focus-visible,
-button:focus-visible {
+button:focus-visible,
+a:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -320,6 +321,15 @@ button.link {
 
 button.link:hover {
   background: none;
+  color: var(--accent-hover);
+}
+
+a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+a:hover {
   color: var(--accent-hover);
 }
 
