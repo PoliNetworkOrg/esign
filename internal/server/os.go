@@ -13,16 +13,25 @@ type downloadLink struct {
 	Label string
 	// Page is set when URL is the release page rather than the file that installs the agent.
 	Page bool
+	// Update says how the newest version replaces this one.
+	Update string
 }
 
 // download is the newest version for goos. The macOS and Windows files have the same name in every release
-// (scripts/build-macos.sh, scripts/build-windows.sh); Linux has a package per distribution, listed on the release page.
+// (scripts/build-macos.sh, scripts/build-windows.sh); Linux has a package per distribution, listed on the release page,
+// which the package manager updates.
 func download(goos string) downloadLink {
+	const replaces = "Download the new one and open it: it replaces this one."
 	switch goos {
 	case "darwin":
-		return downloadLink{URL: latestRelease + "/download/PoliNetwork-eSign-macos.dmg", Label: "Download for macOS"}
+		return downloadLink{URL: latestRelease + "/download/PoliNetwork-eSign-macos.dmg", Label: "Download for macOS", Update: replaces}
 	case "windows":
-		return downloadLink{URL: latestRelease + "/download/PoliNetwork-eSign-windows-amd64.zip", Label: "Download for Windows"}
+		return downloadLink{URL: latestRelease + "/download/PoliNetwork-eSign-windows-amd64.zip", Label: "Download for Windows", Update: replaces}
 	}
-	return downloadLink{URL: latestRelease, Label: "Open the download page", Page: true}
+	return downloadLink{
+		URL:    latestRelease,
+		Label:  "Open the download page",
+		Page:   true,
+		Update: "Update the polinetwork-esign package, or install the new one from the download page.",
+	}
 }

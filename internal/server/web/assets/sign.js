@@ -164,7 +164,7 @@ const errorText = (error) => (error?.code === "job_expired" ? "This signing link
 
 /** Ends the page on a version that the dashboard no longer accepts, offering the one that replaces it. */
 function outdated() {
-  fatal("This version is too old to sign. Download the new one and open it: it replaces this one.", {
+  fatal(`This version is too old to sign. ${$("fatal-download").dataset.update}`, {
     code: "agent_outdated",
     title: "Update PoliNetwork eSign",
     hint: "Then sign again from the dashboard.",

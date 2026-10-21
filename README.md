@@ -160,7 +160,8 @@ after the other, and shows which were signed. If the dashboard refuses one docum
 the others are still signed; if the card stops answering, the rest are left unsigned and you can try again.
 
 When the dashboard no longer accepts your version of PoliNetwork eSign, the window says so before it asks for the
-PIN, with the download for your system: open the downloaded file and it replaces the old version.
+PIN, with the download for your system: on macOS and Windows, open the downloaded file and it replaces the old version;
+on Linux, update the package.
 
 A wrong PIN uses one of the card's three attempts; the agent never retries a PIN by itself. After three wrong PINs the
 card is blocked: unblock it with the PUK in CIE ID. The agent counts the wrong PINs typed in a row for each signer, even

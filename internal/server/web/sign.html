@@ -31,7 +31,7 @@
         </p>
         <div class="actions">
           <button type="button" class="secondary" data-close>Close</button>
-          <a id="fatal-download" class="button" href="{{.Download.URL}}" hidden
+          <a id="fatal-download" class="button" href="{{.Download.URL}}" data-update="{{.Download.Update}}" hidden
             {{- if .Download.Page}} target="_blank" rel="noreferrer"{{end}}>{{.Download.Label}}</a>
         </div>
       </section>

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -273,10 +274,16 @@ func TestSignPageDashboard(t *testing.T) {
 }
 
 func TestDownload(t *testing.T) {
+	replaces := "Download the new one and open it: it replaces this one."
 	cases := map[string]downloadLink{
-		"darwin":  {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg", Label: "Download for macOS"},
-		"windows": {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-windows-amd64.zip", Label: "Download for Windows"},
-		"linux":   {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest", Label: "Open the download page", Page: true},
+		"darwin":  {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg", Label: "Download for macOS", Update: replaces},
+		"windows": {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-windows-amd64.zip", Label: "Download for Windows", Update: replaces},
+		"linux": {
+			URL:    "https://github.com/PoliNetworkOrg/esign/releases/latest",
+			Label:  "Open the download page",
+			Page:   true,
+			Update: "Update the polinetwork-esign package, or install the new one from the download page.",
+		},
 	}
 	for goos, want := range cases {
 		if got := download(goos); got != want {
@@ -304,10 +311,13 @@ func TestDownloadsAreReleased(t *testing.T) {
 
 // TestSignPageOffersTheDownload: the installer downloads in the window itself, the release page opens in a new tab.
 func TestSignPageOffersTheDownload(t *testing.T) {
+	attrs := func(goos string) string {
+		return `href="` + download(goos).URL + `" data-update="` + template.HTMLEscapeString(download(goos).Update) + `" hidden`
+	}
 	link := map[string]string{
-		"darwin":  `<a id="fatal-download" class="button" href="` + download("darwin").URL + `" hidden>Download for macOS</a>`,
-		"windows": `<a id="fatal-download" class="button" href="` + download("windows").URL + `" hidden>Download for Windows</a>`,
-		"linux":   `<a id="fatal-download" class="button" href="` + latestRelease + `" hidden target="_blank" rel="noreferrer">Open the download page</a>`,
+		"darwin":  `<a id="fatal-download" class="button" ` + attrs("darwin") + `>Download for macOS</a>`,
+		"windows": `<a id="fatal-download" class="button" ` + attrs("windows") + `>Download for Windows</a>`,
+		"linux":   `<a id="fatal-download" class="button" ` + attrs("linux") + ` target="_blank" rel="noreferrer">Open the download page</a>`,
 	}
 	for goos, want := range link {
 		var page bytes.Buffer
