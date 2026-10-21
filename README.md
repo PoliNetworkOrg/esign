@@ -51,14 +51,16 @@ read. The dashboard never sees the PIN.
 
 Download the file for your system from the [latest release](https://github.com/PoliNetworkOrg/esign/releases/latest).
 Installing needs no administrator rights: the agent is installed for your user only, starts when you log in, and lets
-the dashboard start it with a `polinetwork-esign://open` link when it is not running.
+the dashboard start it with a `polinetwork-esign://open` link when it is not running. To update on macOS or Windows,
+download the latest version and open it the same way: it replaces the one installed.
 
 Until v0.1.x the agent was called PoliNetwork Sign Agent. Installing PoliNetwork eSign removes it (app, login item,
 link handler, Debian package) and keeps its configuration and card pairings.
 
 ### macOS (Apple Silicon and Intel)
 
-1. Download `PoliNetwork-eSign-<version>-macos.dmg` (or the `.zip`) and open it.
+1. Download [`PoliNetwork-eSign-macos.dmg`](https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg)
+   (or the `.zip`) and open it.
 2. Open **PoliNetwork eSign**. The app is not notarized yet, so macOS refuses the first time: open
    **System Settings > Privacy & Security**, choose **Open Anyway** next to the message about PoliNetwork eSign,
    and confirm.
@@ -73,7 +75,9 @@ card pairing that Software CIE keeps in its own folder.
 
 ### Windows
 
-1. Download `PoliNetwork-eSign-<version>-windows-amd64.zip`, extract it and double-click `esign.exe`.
+1. Download
+   [`PoliNetwork-eSign-windows-amd64.zip`](https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-windows-amd64.zip),
+   extract it and double-click `esign.exe`.
 2. The program is not code-signed yet: if SmartScreen warns, choose **More info > Run anyway**.
 3. It copies itself to `%LOCALAPPDATA%\PoliNetwork\eSign`, starts at login, appears in **Settings > Apps >
    Installed apps**, and opens `http://127.0.0.1:47321/` in your browser, which shows whether the reader, the CIE and
@@ -283,6 +287,12 @@ Builds:
 Releases: push a `v*` tag; `.github/workflows/release.yml` builds everything, adds `SHA256SUMS.txt` and publishes the
 GitHub release (a pre-release for tags such as `v1.2.3-rc.1`). Releases that are not pre-releases also update the APT
 and DNF repositories and the AUR package: see [`docs/linux-packages.md`](docs/linux-packages.md).
+
+The macOS and Windows files have the same names in every release (`PoliNetwork-eSign-macos.dmg`,
+`PoliNetwork-eSign-macos.zip`, `PoliNetwork-eSign-windows-amd64.zip`), so
+`https://github.com/PoliNetworkOrg/esign/releases/latest/download/<name>` always downloads the newest release that is
+not a pre-release. The dashboard links the `.dmg` and the Windows `.zip` that way, and the release fails if either is
+missing.
 
 ### Maintainer TODO before a public release
 
