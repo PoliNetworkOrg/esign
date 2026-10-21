@@ -23,7 +23,8 @@ notify("ready", document.documentElement.dataset.version)
 const $ = (id) => document.getElementById(id)
 
 // Without CSS masking the PIN would show in clear, so fall back to a password field.
-if (!CSS.supports("-webkit-text-security", "disc")) $("pin").type = "password"
+const masking = CSS.supports("-webkit-text-security", "disc")
+if (!masking) $("pin").type = "password"
 
 const sections = ["loading", "fatal", "form", "working", "done"]
 let pollTimer = 0
@@ -559,6 +560,17 @@ $("form").addEventListener("submit", async (event) => {
   for (const r of result.results || []) outcome.set(r.ticket, r)
   showResults()
 })
+
+/** Shows the PIN's digits so that the signer can check them, or masks them again. */
+function showDigits(shown) {
+  $("pin-show").setAttribute("aria-pressed", String(shown))
+  if (masking) $("pin").classList.toggle("masked", !shown)
+  else $("pin").type = shown ? "text" : "password"
+}
+
+// A click on the eye leaves the focus in the field, to go on typing.
+$("pin-show").addEventListener("mousedown", (event) => event.preventDefault())
+$("pin-show").addEventListener("click", () => showDigits($("pin-show").getAttribute("aria-pressed") !== "true"))
 
 $("pin").addEventListener("input", () => {
   $("pin").value = $("pin").value.replace(/\D/g, "").slice(0, 8)

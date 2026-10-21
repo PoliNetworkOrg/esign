@@ -374,6 +374,62 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
+.pin-box {
+  position: relative;
+}
+
+.pin-box input {
+  padding-right: 52px;
+}
+
+/* The eye that shows the PIN's digits, inside the field's right end. */
+button.reveal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 8px 8px 0;
+  background: transparent;
+  color: var(--fg-muted);
+}
+
+button.reveal:hover {
+  background: transparent;
+  color: var(--fg);
+}
+
+button.reveal:focus-visible {
+  outline-offset: -4px;
+}
+
+/* The field set around it is dimmed already. */
+button.reveal:disabled {
+  opacity: 1;
+}
+
+.reveal svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.reveal .slash {
+  display: none;
+}
+
+.reveal[aria-pressed="true"] .slash {
+  display: inline;
+}
+
 .hint {
   margin: 6px 0 0;
   color: var(--fg-muted);

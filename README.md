@@ -166,7 +166,8 @@ A wrong PIN uses one of the card's three attempts; the agent never retries a PIN
 card is blocked: unblock it with the PUK in CIE ID. The agent counts the wrong PINs typed in a row for each signer, even
 when the window is closed and opened again, and uses the attempts left that the card reports when it reports them (CIE
 ID's middleware does not). Before the last attempt the window warns above the PIN field and does not offer to remember
-the PIN. A signature with the signer's card clears the count; it is kept in memory only, until the agent stops.
+the PIN. A signature with the signer's card clears the count; it is kept in memory only, until the agent stops. The eye
+at the end of the PIN field shows the digits, to check them before signing.
 
 ## Troubleshooting
 
