@@ -263,22 +263,12 @@ async function pollStatus() {
   unanswered = 0
   if (status.busy) return
   setRemembered(status.remembered)
-  const usable = status.providers.filter((p) => p.available)
-  // Readers of usable providers first: they are the ones named.
-  const readers = [...new Set([...usable, ...status.providers].flatMap((p) => p.readers || []))]
-  if (status.ready) {
-    card.dataset.state = "ready"
-    $("card-text").textContent = readers.length ? `Card detected on ${readers[0]}` : "Card detected"
-  } else if (!readers.length) {
-    card.dataset.state = "waiting"
-    $("card-text").textContent = "Connect the NFC card reader"
-  } else if (usable.length) {
-    card.dataset.state = "waiting"
-    $("card-text").textContent = `Place your CIE on the reader (${readers[0]})`
-  } else {
-    card.dataset.state = "waiting"
-    $("card-text").textContent = "No CIE software found. See the setup guide in the dashboard."
-  }
+  const { reader, software } = describeStatus(status)
+  card.dataset.state = status.ready ? "ready" : "waiting"
+  if (status.ready) $("card-text").textContent = reader?.name ? `Card detected on ${reader.name}` : "Card detected"
+  else if (!reader?.ok) $("card-text").textContent = "Connect the NFC card reader"
+  else if (software.ok) $("card-text").textContent = `Place your CIE on the reader (${reader.name})`
+  else $("card-text").textContent = "No CIE software found. See the setup guide in the dashboard."
 }
 
 function formError(message) {

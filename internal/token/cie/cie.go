@@ -109,13 +109,12 @@ func (p *Provider) Status(context.Context) token.Status {
 			notCIE = append(notCIE, r.Name)
 		}
 	}
-	if len(readers) == 0 {
-		st.Detail = "no smart-card reader"
-		return st
-	}
+	// Without a reader the provider still works once one is connected: only a PC/SC failure makes it unavailable.
 	st.Available = true
 	st.CardPresent = &present
-	if !present && len(notCIE) > 0 {
+	if len(readers) == 0 {
+		st.Detail = "no smart-card reader"
+	} else if !present && len(notCIE) > 0 {
 		st.Detail = "the card on " + strings.Join(notCIE, ", ") + " is not a CIE"
 	}
 	return st

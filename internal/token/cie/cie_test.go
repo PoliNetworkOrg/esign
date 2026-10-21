@@ -140,10 +140,19 @@ func digest() []byte {
 	return d[:]
 }
 
-func TestStatus(t *testing.T) {
-	if st := cie.NewWithConnector(&connector{}).Status(t.Context()); st.Available || st.Detail != "no smart-card reader" {
+// TestStatusNoReader: without a reader the provider is available with no card, and signing asks for the reader.
+func TestStatusNoReader(t *testing.T) {
+	p := cie.NewWithConnector(&connector{})
+	st := p.Status(t.Context())
+	if !st.Available || st.CardPresent == nil || *st.CardPresent || len(st.Readers) != 0 || st.Detail != "no smart-card reader" {
 		t.Fatalf("no readers: %+v", st)
 	}
+	if _, err := p.Open(t.Context(), "12345678"); token.CodeOf(err) != token.CodeNoReader {
+		t.Fatalf("open without a reader: %v", err)
+	}
+}
+
+func TestStatus(t *testing.T) {
 	empty := &connector{readers: []*reader{{name: "ACS ACR1252"}}}
 	st := cie.NewWithConnector(empty).Status(t.Context())
 	if !st.Available || st.CardPresent == nil || *st.CardPresent || len(st.Readers) != 1 {

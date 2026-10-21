@@ -63,7 +63,8 @@ link handler, Debian package) and keeps its configuration and card pairings.
    **System Settings > Privacy & Security**, choose **Open Anyway** next to the message about PoliNetwork eSign,
    and confirm.
 3. The app copies itself to `~/Applications`, starts at login (it appears in **System Settings > General > Login
-   Items**) and opens `http://127.0.0.1:47321/` in your browser: "The agent is running".
+   Items**) and opens `http://127.0.0.1:47321/` in your browser. The page shows whether the reader, the CIE and the
+   signing software are ready: with the CIE on the reader it says "Ready to sign".
 
 The official Software CIE module is built for Intel Macs only. On Apple Silicon the agent runs it in a helper process
 under Rosetta: if macOS offers to install Rosetta, accept (or run `softwareupdate --install-rosetta`). The first time you
@@ -75,7 +76,8 @@ card pairing that Software CIE keeps in its own folder.
 1. Download `PoliNetwork-eSign-<version>-windows-amd64.zip`, extract it and double-click `esign.exe`.
 2. The program is not code-signed yet: if SmartScreen warns, choose **More info > Run anyway**.
 3. It copies itself to `%LOCALAPPDATA%\PoliNetwork\eSign`, starts at login, appears in **Settings > Apps >
-   Installed apps**, and opens `http://127.0.0.1:47321/` in your browser.
+   Installed apps**, and opens `http://127.0.0.1:47321/` in your browser, which shows whether the reader, the CIE and
+   the signing software are ready.
 
 ### Linux
 

@@ -6,6 +6,8 @@
     <title>PoliNetwork eSign</title>
     <link rel="icon" href="/assets/logo.png" />
     <link rel="stylesheet" href="/assets/style.css" />
+    <script src="/assets/status.js" defer></script>
+    <script src="/assets/index.js" defer></script>
   </head>
   <body>
     <header class="bar">
@@ -14,9 +16,25 @@
     </header>
     <main>
       <section class="panel">
-        <div class="check" aria-hidden="true">✓</div>
-        <h1>The agent is running</h1>
+        <div id="ready-icon" class="check" aria-hidden="true" hidden>✓</div>
+        <h1 id="heading">PoliNetwork eSign is running</h1>
+        <div class="status-list" role="status" aria-live="polite">
+          <div id="reader" class="card-status" data-state="unknown">
+            <span class="dot" aria-hidden="true"></span>
+            <span class="status-text">Looking for the card reader…</span>
+          </div>
+          <div id="card" class="card-status" hidden>
+            <span class="dot" aria-hidden="true"></span>
+            <span class="status-text"></span>
+          </div>
+          <div id="software" class="card-status" hidden>
+            <span class="dot" aria-hidden="true"></span>
+            <span class="status-text"></span>
+          </div>
+          <p id="software-detail" class="hint detail" hidden></p>
+        </div>
         <p class="muted">To sign a document, open it in the PoliNetwork dashboard and choose “Sign with CIE”.</p>
+        <p id="version" class="hint version"></p>
       </section>
     </main>
   </body>

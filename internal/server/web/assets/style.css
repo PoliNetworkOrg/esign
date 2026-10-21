@@ -218,6 +218,28 @@ h1 {
   background: currentColor;
 }
 
+.status-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.status-list .card-status {
+  margin: 0;
+}
+
+.status-list .detail {
+  margin: 0;
+  padding: 0 12px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.version {
+  min-height: 1.5em;
+  margin: 0;
+}
+
 label {
   display: block;
   margin-bottom: 6px;
