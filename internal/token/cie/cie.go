@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -42,6 +43,10 @@ type Conn interface {
 
 // ErrNoService is wrapped by connectors when the smart-card service is not running.
 var ErrNoService = errors.New("smart-card service unavailable")
+
+// serviceNeedsReader is true where the smart-card service runs only while a reader is connected, as on Windows since
+// version 8: there ErrNoService means that no reader is connected. With pcsc-lite it means that pcscd is missing.
+var serviceNeedsReader = runtime.GOOS == "windows"
 
 // Provider is the direct CIE provider.
 type Provider struct {
@@ -89,6 +94,9 @@ func (p *Provider) isCIE(r Reader) (bool, string) {
 func (p *Provider) Status(context.Context) token.Status {
 	st := token.Status{Provider: p.Name()}
 	readers, err := p.conn.Readers()
+	if serviceNeedsReader && errors.Is(err, ErrNoService) {
+		readers, err = nil, nil
+	}
 	if err != nil {
 		st.Detail = err.Error()
 		return st
