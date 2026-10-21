@@ -224,9 +224,8 @@ function describeDoc(li, doc) {
     line(li, errorText(error), "bad")
     return
   }
-  const by = [doc.job.requestedBy && `Requested by ${doc.job.requestedBy}`, doc.job.signer.role].filter(Boolean)
-  line(li, by.join(" · "), "muted")
-  line(li, plan(doc.job))
+  // The role is the signer's: it goes with what they sign.
+  line(li, [doc.job.signer.role, plan(doc.job)].filter(Boolean).join(" · "), "muted")
 }
 
 function describeResult(li, doc) {
@@ -298,6 +297,8 @@ function setPending(list, toSign) {
     const { job } = docs[0]
     $("heading").textContent = job.document.title
     $("doc-file").textContent = job.document.fileName
+    // A file named after the title adds nothing.
+    $("doc-file-row").hidden = job.document.fileName.replace(/\.pdf$/i, "") === job.document.title
     $("doc-place").textContent = plan(job)
     $("doc-requester").textContent = job.requestedBy || ""
     $("doc-requester-row").hidden = !job.requestedBy
@@ -555,11 +556,7 @@ $("form").addEventListener("submit", async (event) => {
   const pin = remembered ? "" : $("pin").value.trim()
   if (!remembered) {
     if (!/^\d{8}$/.test(pin)) {
-      pinError(
-        /^\d{4}$/.test(pin)
-          ? "Type all 8 digits of your CIE PIN. Other CIE apps ask only for the last 4."
-          : "Type the 8 digits of your CIE PIN.",
-      )
+      pinError(/^\d{4}$/.test(pin) ? "Type all 8 digits of your CIE PIN." : "Type the 8 digits of your CIE PIN.")
       $("pin").focus()
       return
     }
