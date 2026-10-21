@@ -536,16 +536,30 @@ function showResults() {
   document.title = `${$("done-title").textContent} · PoliNetwork`
 
   let message = signer ? `Signed as ${signer}.` : ""
-  if (all) message += " You can close this window."
-  else if (again.some((d) => outcome.get(d.ticket).error.code !== "backend_unreachable"))
+  if (again.some((d) => outcome.get(d.ticket).error.code !== "backend_unreachable"))
     message += " Keep the CIE still on the reader and try again."
   else if (again.length) message += " Try again in a moment."
-  else message += " Start again from the dashboard for the others."
+  else if (!all) message += " Start again from the dashboard for the others."
   $("done-message").textContent = message.trim()
   $("retry").hidden = again.length === 0
+  $("done-close").hidden = all
   show("done")
   $("done-title").focus()
-  if (all) setTimeout(() => window.close(), 4000)
+  if (!all) return
+  // The dashboard closes its window once the page behind it shows the signature, and the window closes itself after a
+  // while: it offers Close only to a signer who has to close it.
+  if (!window.opener) offerClose()
+  setTimeout(() => {
+    window.close()
+    if (!window.closed) offerClose()
+  }, 4000)
+}
+
+/** Tells the signer that they can close the window, once nothing else will. */
+function offerClose() {
+  if (!$("done-close").hidden) return
+  $("done-message").textContent = `${$("done-message").textContent} You can close this window.`.trim()
+  $("done-close").hidden = false
 }
 
 $("form").addEventListener("submit", async (event) => {
