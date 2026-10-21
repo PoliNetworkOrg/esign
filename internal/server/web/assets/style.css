@@ -236,8 +236,9 @@ h1 {
 }
 
 .version {
-  min-height: 1.5em;
-  margin: 0;
+  margin-top: 16px;
+  color: var(--fg-muted);
+  font-size: 12px;
 }
 
 label {

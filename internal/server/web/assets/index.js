@@ -33,7 +33,6 @@ function render(status) {
   setText($("software-detail"), software.detail || "")
   $("software-detail").hidden = !software.detail
   setHeading(ready ? "Ready to sign" : "PoliNetwork eSign is running", ready)
-  setText($("version"), `PoliNetwork eSign ${status.version}`)
 }
 
 /** Shows heading and text in place of the status rows. */

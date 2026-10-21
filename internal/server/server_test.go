@@ -232,6 +232,38 @@ func TestGuards(t *testing.T) {
 	}
 }
 
+func TestPagesShowTheVersion(t *testing.T) {
+	for version, footer := range map[string]string{
+		"v1.2.3": "PoliNetwork eSign 1.2.3</footer>",
+		"<b>":    "PoliNetwork eSign &lt;b&gt;</footer>",
+	} {
+		s := New(Options{Port: 47321, Version: version})
+		for _, path := range []string{"/", "/sign"} {
+			rec := do(t, s, req{method: "GET", path: path})
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), footer) {
+				t.Errorf("%s with version %q: %d, no %q in\n%s", path, version, rec.Code, footer, rec.Body)
+			}
+		}
+	}
+}
+
+func TestShownVersion(t *testing.T) {
+	cases := map[string]string{
+		"v0.4.0":      "0.4.0",
+		"v1.2.3-rc.1": "1.2.3-rc.1",
+		"0.4.0":       "0.4.0",
+		"dev":         "dev",
+		"vnext":       "vnext",
+		"v":           "v",
+		"":            "",
+	}
+	for version, want := range cases {
+		if got := shownVersion(version); got != want {
+			t.Errorf("shownVersion(%q) = %q, want %q", version, got, want)
+		}
+	}
+}
+
 type signResponse struct {
 	Results []signResult `json:"results"`
 	Signer  *struct {

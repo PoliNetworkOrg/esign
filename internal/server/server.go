@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -34,6 +35,23 @@ const APIHeader = "X-PN-eSign"
 
 //go:embed web
 var webFS embed.FS
+
+// pages are the HTML pages, rendered with pageData; their assets are served as they are.
+var pages = template.Must(template.ParseFS(webFS, "web/*.html"))
+
+// pageData is what the pages show before any script runs.
+type pageData struct {
+	// Version is the agent's version as people read it: "0.4.0" for the release tagged v0.4.0, or "dev".
+	Version string
+}
+
+// shownVersion drops the "v" of a release tag.
+func shownVersion(version string) string {
+	if rest, ok := strings.CutPrefix(version, "v"); ok && rest != "" && rest[0] >= '0' && rest[0] <= '9' {
+		return rest
+	}
+	return version
+}
 
 // Options configures the server.
 type Options struct {
@@ -217,13 +235,14 @@ func (s *Server) guard(next http.Handler) http.Handler {
 
 func (s *Server) page(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data, err := webFS.ReadFile("web/" + name)
-		if err != nil {
-			http.NotFound(w, r)
+		var page bytes.Buffer
+		if err := pages.ExecuteTemplate(&page, name, pageData{Version: shownVersion(s.opts.Version)}); err != nil {
+			s.opts.Logger.Error("render page", "page", name, "error", err)
+			http.Error(w, "PoliNetwork eSign could not show this page.", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(data)
+		_, _ = w.Write(page.Bytes())
 	}
 }
 
