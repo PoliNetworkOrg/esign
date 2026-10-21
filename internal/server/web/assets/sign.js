@@ -300,8 +300,10 @@ function setPending(list, toSign) {
     // A file named after the title adds nothing.
     $("doc-file-row").hidden = job.document.fileName.replace(/\.pdf$/i, "") === job.document.title
     $("doc-place").textContent = plan(job)
-    $("doc-requester").textContent = job.requestedBy || ""
-    $("doc-requester-row").hidden = !job.requestedBy
+    // Neither does "Requested by" on someone's own request: their name is in "Signing as".
+    const requester = job.requestedBy === job.signer.name ? "" : job.requestedBy || ""
+    $("doc-requester").textContent = requester
+    $("doc-requester-row").hidden = !requester
     $("doc-signer").textContent = job.signer.role ? `${job.signer.name} · ${job.signer.role}` : job.signer.name
     $("docs").hidden = true
     document.title = `Sign “${job.document.title}” · PoliNetwork`
