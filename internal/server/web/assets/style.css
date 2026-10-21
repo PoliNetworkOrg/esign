@@ -7,6 +7,9 @@
   --fg-muted: #58626c;
   --accent: #1156ae;
   --accent-hover: #0a448e;
+  /* Text on the accent: white on the dark blue, the darkest neutral on the light blue of the dark scheme (as in the
+     dashboard), at least 4.5:1 either way. */
+  --on-accent: #ffffff;
   --focus: #3578d7;
   --success-fg: #00642b;
   --success-bg: #e8f9eb;
@@ -27,6 +30,7 @@
     --fg-muted: #9da6ae;
     --accent: #619cf1;
     --accent-hover: #95c0fe;
+    --on-accent: #060e16;
     --success-fg: #7ee29c;
     --success-bg: #0d2a17;
     --warning-fg: #ffc27a;
@@ -592,7 +596,7 @@ a.button {
   border: 1px solid transparent;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -611,7 +615,7 @@ a.button:hover {
 }
 
 a.button:hover {
-  color: #fff;
+  color: var(--on-accent);
 }
 
 button:disabled {
