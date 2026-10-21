@@ -50,13 +50,13 @@ func (w *wrongPINs) get(signers []string) *attempts {
 }
 
 // wrong counts a wrong PIN for the signers, with the attempts the card reported (-1 when it did not), and returns
-// what the page shows.
+// what the page shows. A batch names its signer once per document, but the PIN was typed once: it counts once.
 func (w *wrongPINs) wrong(signers []string, retriesLeft int) *attempts {
 	w.mu.Lock()
 	if w.by == nil {
 		w.by = map[string]attempts{}
 	}
-	for _, k := range signers {
+	for _, k := range unique(signers) {
 		a := attempts{Left: retriesLeft, Card: true}
 		if retriesLeft < 0 {
 			prev, ok := w.by[k]

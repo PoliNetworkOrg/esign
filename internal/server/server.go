@@ -396,7 +396,7 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) (*jobRequest, Ba
 		writeError(w, http.StatusBadRequest, "bad_request", "Malformed request")
 		return nil, nil, false
 	}
-	req.Tickets = uniqueTickets(req.Tickets)
+	req.Tickets = unique(req.Tickets)
 	valid := len(req.Tickets) > 0
 	for _, t := range req.Tickets {
 		valid = valid && backend.TicketPattern.MatchString(t)
@@ -417,14 +417,14 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) (*jobRequest, Ba
 	return &req, s.opts.Backend(req.Origin), true
 }
 
-// uniqueTickets returns tickets without repeats, in their order.
-func uniqueTickets(tickets []string) []string {
-	seen := make(map[string]bool, len(tickets))
+// unique returns list without repeats, in its order.
+func unique(list []string) []string {
+	seen := make(map[string]bool, len(list))
 	var out []string
-	for _, t := range tickets {
-		if !seen[t] {
-			seen[t] = true
-			out = append(out, t)
+	for _, s := range list {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
 		}
 	}
 	return out

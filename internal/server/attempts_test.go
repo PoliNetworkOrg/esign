@@ -120,6 +120,17 @@ func TestWrongPINsPerSigner(t *testing.T) {
 	wantAttempts(t, "batch", jobAttempts(t, s, ts[1], ts[2]), &attempts{Left: 2})
 }
 
+// TestWrongPINsInABatch: a wrong PIN typed once for several documents of the same signer is one attempt.
+func TestWrongPINsInABatch(t *testing.T) {
+	ts := tickets(3)
+	fb := &fakeBackend{signer: map[string]string{ts[0]: "Mario Rossi", ts[1]: "Mario Rossi", ts[2]: "Mario Rossi"}}
+	s := newServer(fb, muteCard(t))
+	rec, _ := signRequest(t, s, "00000000", ts...)
+	wantAttempts(t, "first wrong PIN", attemptsOf(t, rec), &attempts{Left: 2})
+	rec, _ = signRequest(t, s, "00000000", ts...)
+	wantAttempts(t, "second wrong PIN", attemptsOf(t, rec), &attempts{Left: 1})
+}
+
 // TestWrongPINsKeptForAnotherCard: a PIN that opens a card the backend refuses for the signer proves nothing about the
 // signer's own card, so the count stays until a signature of theirs is accepted.
 func TestWrongPINsKeptForAnotherCard(t *testing.T) {
