@@ -44,9 +44,12 @@
   display: none !important;
 }
 
+/* The page is as tall as the window and main scrolls under the bar, so that the PIN form can fit the window. */
 body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
   margin: 0;
-  min-height: 100dvh;
   background: var(--bg);
   color: var(--fg);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -55,6 +58,7 @@ body {
 
 .bar {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
   padding: 14px 20px;
@@ -68,12 +72,17 @@ body {
 }
 
 main {
-  display: grid;
-  place-items: start center;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
   padding: 24px 16px;
+  overflow-y: auto;
 }
 
 .panel {
+  flex: none;
   width: min(100%, 420px);
   padding: 24px;
   border: 1px solid var(--line);
@@ -131,6 +140,30 @@ h1 {
 
 #results {
   max-height: 46dvh;
+}
+
+/* The PIN form fits the window: the list of documents gives up height first, down to about one row, so that Sign stays
+   in view, also with the last-attempt warning or an error. The version below it may go under the fold; only a window
+   too small for the form itself scrolls the form. */
+#form {
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+#form > * {
+  flex: none;
+}
+
+#form > .docs {
+  flex-shrink: 1;
+  min-height: 66px;
+}
+
+/* The top of a second row shows that the list scrolls. */
+#form > .docs:has(li + li) {
+  min-height: 92px;
 }
 
 .docs li {
@@ -337,8 +370,10 @@ fieldset:disabled input {
   overflow-wrap: anywhere;
 }
 
+/* As far below the panel as the panel is below the bar, so that a form filling the window hides it whole. */
 .version {
-  margin-top: 16px;
+  flex: none;
+  margin-top: 24px;
   color: var(--fg-muted);
   font-size: 12px;
 }
