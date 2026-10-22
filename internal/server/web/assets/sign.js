@@ -26,6 +26,8 @@ let signing = false
 let docs = []
 /** Tickets the PIN form signs. */
 let pending = []
+/** Documents the PIN form lists. */
+let listed = []
 /** When the first of the pending jobs expires by this computer's clock (ms since the epoch), Infinity when unknown. */
 let deadline = Infinity
 /** Whether the agent is asking the backend if the pending jobs expired. */
@@ -162,9 +164,11 @@ function describeDoc(li, doc) {
   const title = document.createElement("strong")
   title.textContent = titleOf(doc)
   li.append(title)
-  if (!doc.job) {
+  // A document that could not be loaded, or whose link expired while the form was open.
+  const error = outcome.get(doc.ticket)?.error
+  if (!doc.job || error?.code === "job_expired") {
     li.classList.add("failed")
-    line(li, errorText(doc.error), "bad")
+    line(li, errorText(error), "bad")
     return
   }
   const by = [doc.job.requestedBy && `Requested by ${doc.job.requestedBy}`, doc.job.signer.role].filter(Boolean)
@@ -209,8 +213,20 @@ async function load() {
 }
 
 /** Shows the PIN form for the tickets to sign, listing the given documents. */
-function showForm(listed, toSign, message = "") {
+function showForm(list, toSign, message = "") {
+  setPending(list, toSign)
+  $("pin").value = ""
+  $("remember").checked = false
+  formError(message)
+  show("form")
+  showPIN()
+  startPolling()
+}
+
+/** Sets the tickets that the PIN form signs and the documents it lists, and describes them; the PIN stays. */
+function setPending(list, toSign) {
   pending = toSign
+  listed = list
   // Go sends a missing time as year 1.
   const expiries = docs.filter((d) => pending.includes(d.ticket)).map((d) => Date.parse(d.job.expiresAt))
   deadline = Math.min(...expiries.filter((t) => t > 0))
@@ -233,12 +249,6 @@ function showForm(listed, toSign, message = "") {
     document.title = `Sign “${job.document.title}” · PoliNetwork`
   }
   $("submit").textContent = n === 1 ? "Sign" : `Sign ${n} documents`
-  $("pin").value = ""
-  $("remember").checked = false
-  formError(message)
-  show("form")
-  showPIN()
-  startPolling()
 }
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" })
@@ -284,8 +294,9 @@ const EXPIRY_RECHECK = 30_000
 
 /**
  * Once this computer's clock says a pending job expired, asks the backend, which decides: a clock running fast must
- * not end the window early. Shows the expiry screen only when the backend confirms, without cancelling the jobs (the
- * dashboard then says they expired); otherwise asks again later. A signature already running is left to finish.
+ * not end the window early. A job the backend confirms expired leaves the form, which keeps the others, and shows as
+ * failed; the expiry screen comes only when none is left. The jobs are not cancelled (the dashboard then says they
+ * expired). A signature already running is left to finish.
  */
 async function checkExpiry() {
   if (signing || checkingExpiry || $("form").hidden || Date.now() < deadline) return
@@ -298,12 +309,21 @@ async function checkExpiry() {
   }
   checkingExpiry = false
   if (signing || $("form").hidden) return
-  if (jobs.some((d) => pending.includes(d.ticket) && d.error?.code === "job_expired")) {
+  const expired = jobs.filter((d) => pending.includes(d.ticket) && d.error?.code === "job_expired").map((d) => d.ticket)
+  const left = pending.filter((t) => !expired.includes(t))
+  if (!left.length) {
     notify("error", "job_expired")
     fatalError({ code: "job_expired" })
     return
   }
-  deadline = Date.now() + EXPIRY_RECHECK
+  if (expired.length) {
+    for (const ticket of expired) outcome.set(ticket, { status: "failed", error: { code: "job_expired" } })
+    setPending(listed, left)
+    const what = expired.length === 1 ? "One signing link" : `${expired.length} signing links`
+    formError(`${what} expired. You can still sign the rest.`)
+  }
+  // The backend says the jobs left are valid, whatever this computer's clock says: ask again later.
+  if (!(deadline > Date.now())) deadline = Date.now() + EXPIRY_RECHECK
 }
 
 async function pollStatus() {
