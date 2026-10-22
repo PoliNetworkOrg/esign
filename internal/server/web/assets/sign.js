@@ -254,6 +254,13 @@ async function load() {
   try {
     ;({ jobs: docs, remembered, rememberMinutes = 0, attempts = null } = await api("/api/job", { tickets, origin }))
   } catch (error) {
+    // There is no Sign to press yet: the dashboard offers to start PoliNetwork eSign and loads this window again.
+    if (error.code === "agent_unreachable")
+      return fatal("Start it again from the dashboard.", {
+        code: error.code,
+        title: "PoliNetwork eSign stopped",
+        hint: "",
+      })
     return fatal(error.message || "Cannot load the document.", { code: error.code })
   }
   if (docs.some((d) => d.error?.code === "agent_outdated")) return outdated()
