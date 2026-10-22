@@ -62,7 +62,7 @@ link handler, Debian package) and keeps its configuration and card pairings.
 
 First install **CIE ID** from the Mac App Store, where it is listed as "Software CIE", and open it: on an Apple Silicon
 Mac, accept when macOS offers to install Rosetta. Pair your card in it with the 8-digit PIN. If it pairs there, signing
-works with PoliNetwork eSign too; if it does not, ask whoever sent you the signing request. Then:
+works with PoliNetwork eSign too; if it does not, write to it@polinetwork.org. Then:
 
 1. Download [`PoliNetwork-eSign-macos.dmg`](https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg)
    (or the `.zip`) and open it.
