@@ -326,9 +326,10 @@ async function pollStatus() {
   const { reader, software } = describeStatus(status)
   card.dataset.state = status.ready ? "ready" : "waiting"
   if (status.ready) $("card-text").textContent = reader?.name ? `Card detected on ${reader.name}` : "Card detected"
+  // Unavailable software lists no readers, so it comes first.
+  else if (!software.ok) $("card-text").textContent = "No CIE software found. See the setup guide in the dashboard."
   else if (!reader?.ok) $("card-text").textContent = "Connect the NFC card reader"
-  else if (software.ok) $("card-text").textContent = `Place your CIE on the reader (${reader.name})`
-  else $("card-text").textContent = "No CIE software found. See the setup guide in the dashboard."
+  else $("card-text").textContent = `Place your CIE on the reader (${reader.name})`
 }
 
 function formError(message) {
