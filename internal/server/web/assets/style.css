@@ -218,6 +218,28 @@ h1 {
   background: currentColor;
 }
 
+.status-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.status-list .card-status {
+  margin: 0;
+}
+
+.status-list .detail {
+  margin: 0;
+  padding: 0 12px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.version {
+  min-height: 1.5em;
+  margin: 0;
+}
+
 label {
   display: block;
   margin-bottom: 6px;
@@ -247,7 +269,8 @@ input.masked {
 }
 
 input:focus-visible,
-button:focus-visible {
+button:focus-visible,
+a:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -298,6 +321,15 @@ button.link {
 
 button.link:hover {
   background: none;
+  color: var(--accent-hover);
+}
+
+a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+a:hover {
   color: var(--accent-hover);
 }
 

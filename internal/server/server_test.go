@@ -556,3 +556,171 @@ func TestNoFallbackForUntrustedCard(t *testing.T) {
 		t.Fatalf("error %v, next opened %d times", err, next.opened)
 	}
 }
+
+// broken is a provider whose Status or Open panics.
+type broken struct{ status, open bool }
+
+func (b *broken) Name() string { return "broken" }
+func (b *broken) Status(context.Context) token.Status {
+	if b.status {
+		panic("status")
+	}
+	present := true
+	return token.Status{Provider: "broken", Available: true, CardPresent: &present}
+}
+func (b *broken) Open(context.Context, string) (token.Session, error) {
+	if b.open {
+		panic("open")
+	}
+	return nil, token.Errorf(token.CodeNoCard, "no card")
+}
+
+// counted counts the sessions opened on a software card.
+type counted struct {
+	*soft.Provider
+	opened int
+}
+
+func (c *counted) Open(ctx context.Context, pin string) (token.Session, error) {
+	c.opened++
+	return c.Provider.Open(ctx, pin)
+}
+
+func softCard(t *testing.T) *counted {
+	t.Helper()
+	p, err := soft.New("12345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &counted{Provider: p}
+}
+
+// TestStatusPanic: a provider whose status panics is reported unavailable, and the next one still signs.
+func TestStatusPanic(t *testing.T) {
+	fb := &fakeBackend{}
+	card := softCard(t)
+	s := newServer(fb, &broken{status: true}, card)
+	rec := do(t, s, req{method: "GET", path: "/api/status"})
+	var st statusResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &st)
+	if rec.Code != http.StatusOK || len(st.Providers) != 2 || st.Providers[0].Available || !st.Providers[1].Available || !st.Ready {
+		t.Fatalf("status: %d %s", rec.Code, rec.Body)
+	}
+	rec, res := signRequest(t, s, "12345678", ticket)
+	if got := statuses(res); rec.Code != http.StatusOK || !slices.Equal(got, []string{"completed"}) || card.opened != 1 {
+		t.Fatalf("sign: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// TestOpenPanic: a panic while opening the card is answered as an internal error, and the PIN goes nowhere else.
+func TestOpenPanic(t *testing.T) {
+	card := softCard(t)
+	s := newServer(&fakeBackend{}, &broken{open: true}, card)
+	rec, _ := signRequest(t, s, "12345678", ticket)
+	if rec.Code != http.StatusInternalServerError || errorCode(rec) != "internal" || card.opened != 0 {
+		t.Fatalf("sign: %d %s, fallback opened %d times", rec.Code, rec.Body, card.opened)
+	}
+}
+
+// heldStatus is a software card whose first status check holds the card until released, as a slow reader's can.
+type heldStatus struct {
+	*counted
+	once    sync.Once
+	holding chan struct{}
+	release chan struct{}
+}
+
+func (h *heldStatus) Status(ctx context.Context) token.Status {
+	h.once.Do(func() {
+		close(h.holding)
+		<-h.release
+	})
+	return h.counted.Status(ctx)
+}
+
+// TestSignWaitsForStatus: a signature arriving while a status check (the status pages poll) holds the card waits for
+// it instead of answering busy, which would make the user type the PIN again.
+func TestSignWaitsForStatus(t *testing.T) {
+	card := &heldStatus{counted: softCard(t), holding: make(chan struct{}), release: make(chan struct{})}
+	s := newServer(&fakeBackend{}, card)
+	status := make(chan *httptest.ResponseRecorder, 1)
+	go func() { status <- do(t, s, req{method: "GET", path: "/api/status"}) }()
+	<-card.holding
+	signed := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		rec, _ := signRequest(t, s, "12345678", ticket)
+		signed <- rec
+	}()
+	select {
+	case rec := <-signed:
+		t.Fatalf("sign answered while the status check held the card: %d %s", rec.Code, rec.Body)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(card.release)
+
+	if rec := <-status; rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"busy"`) {
+		t.Errorf("status: %d %s", rec.Code, rec.Body)
+	}
+	rec := <-signed
+	var res signResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &res)
+	if rec.Code != http.StatusOK || !slices.Equal(statuses(res), []string{"completed"}) || card.opened != 1 {
+		t.Fatalf("sign: %d %s, opened %d times", rec.Code, rec.Body, card.opened)
+	}
+}
+
+// TestBusyCard: while a signature holds the card, a status check answers busy at once, and another signature after
+// Options.CardWait without trying the card.
+func TestBusyCard(t *testing.T) {
+	fb := &fakeBackend{}
+	card := softCard(t)
+	s := New(Options{
+		Port:           47321,
+		AllowedOrigins: []string{dashboard},
+		Providers:      []token.Provider{card},
+		Version:        "test",
+		Backend:        func(string) Backend { return fb },
+		CardWait:       20 * time.Millisecond,
+	})
+	if !s.card.TryLock() {
+		t.Fatal("the card is busy")
+	}
+	defer s.card.Unlock()
+	if rec := do(t, s, req{method: "GET", path: "/api/status"}); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"busy":true}` {
+		t.Errorf("status: %d %s", rec.Code, rec.Body)
+	}
+	rec, _ := signRequest(t, s, "12345678", ticket)
+	if rec.Code != http.StatusConflict || errorCode(rec) != "busy" || card.opened != 0 || len(fb.failed) != 0 {
+		t.Fatalf("sign: %d %s, opened %d times, failed %v", rec.Code, rec.Body, card.opened, fb.failed)
+	}
+}
+
+// fixed is a provider with a fixed status that has no card to open.
+type fixed struct{ st token.Status }
+
+func (f *fixed) Name() string                        { return f.st.Provider }
+func (f *fixed) Status(context.Context) token.Status { return f.st }
+func (f *fixed) Open(context.Context, string) (token.Session, error) {
+	panic("a provider without a card was opened")
+}
+
+// TestNothingToOpen: when no provider can be tried, the error names what is missing, and the job learns it.
+func TestNothingToOpen(t *testing.T) {
+	absent := false
+	off := &fixed{token.Status{Provider: "off"}}
+	cases := []struct {
+		providers []token.Provider
+		code      string
+	}{
+		{[]token.Provider{off, off}, "no_reader"},
+		{[]token.Provider{&fixed{token.Status{Provider: "off", Readers: []string{"ACS ACR1252"}}}}, "middleware_missing"},
+		{[]token.Provider{off, &fixed{token.Status{Provider: "empty", Available: true, Readers: []string{"ACS ACR1252"}, CardPresent: &absent}}}, "no_card"},
+	}
+	for _, c := range cases {
+		fb := &fakeBackend{}
+		rec, _ := signRequest(t, newServer(fb, c.providers...), "12345678", ticket)
+		if rec.Code != http.StatusServiceUnavailable || errorCode(rec) != c.code || !slices.Equal(fb.failed, []failure{{ticket, c.code}}) {
+			t.Errorf("want %s: %d %s, failed %v", c.code, rec.Code, rec.Body, fb.failed)
+		}
+	}
+}

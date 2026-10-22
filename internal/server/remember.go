@@ -160,9 +160,12 @@ func (s *Server) watch(m *remembered) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			gone := cardGone(s.statuses(ctx).Providers)
 			cancel()
+			if gone {
+				// Before the card is free: a signature waiting for it then finds no PIN to send to a card placed later.
+				s.forget(m, "card removed")
+			}
 			s.card.Unlock()
 			if gone {
-				s.forget(m, "card removed")
 				return
 			}
 		}

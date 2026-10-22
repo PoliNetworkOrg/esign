@@ -63,7 +63,8 @@ link handler, Debian package) and keeps its configuration and card pairings.
    **System Settings > Privacy & Security**, choose **Open Anyway** next to the message about PoliNetwork eSign,
    and confirm.
 3. The app copies itself to `~/Applications`, starts at login (it appears in **System Settings > General > Login
-   Items**) and opens `http://127.0.0.1:47321/` in your browser: "The agent is running".
+   Items**) and opens `http://127.0.0.1:47321/` in your browser. The page shows whether the reader, the CIE and the
+   signing software are ready: with the CIE on the reader it says "Ready to sign".
 
 The official Software CIE module is built for Intel Macs only. On Apple Silicon the agent runs it in a helper process
 under Rosetta: if macOS offers to install Rosetta, accept (or run `softwareupdate --install-rosetta`). The first time you
@@ -75,7 +76,8 @@ card pairing that Software CIE keeps in its own folder.
 1. Download `PoliNetwork-eSign-<version>-windows-amd64.zip`, extract it and double-click `esign.exe`.
 2. The program is not code-signed yet: if SmartScreen warns, choose **More info > Run anyway**.
 3. It copies itself to `%LOCALAPPDATA%\PoliNetwork\eSign`, starts at login, appears in **Settings > Apps >
-   Installed apps**, and opens `http://127.0.0.1:47321/` in your browser.
+   Installed apps**, and opens `http://127.0.0.1:47321/` in your browser, which shows whether the reader, the CIE and
+   the signing software are ready.
 
 ### Linux
 
@@ -138,8 +140,8 @@ The official CIE ID middleware for Linux is published for x86_64 only (`.deb`, `
 ## Using it
 
 In the dashboard, open a document and choose **Sign with CIE**. A small window from the agent asks for your PIN; keep
-the card on the reader until it says the document is signed. If the dashboard says the agent is not running, use its
-**Start the agent** link (or open the app again).
+the card on the reader until it says the document is signed. If the dashboard says PoliNetwork eSign is not running,
+use its **Start PoliNetwork eSign** button (or open the app again).
 
 You type the PIN once even when there is more to sign: a document where you sign in several places (each place is a
 separate signature), or up to 10 documents that the dashboard sends together. The window lists them, signs them one
@@ -296,6 +298,8 @@ and DNF repositories and the AUR package: see [`docs/linux-packages.md`](docs/li
 
 ## Code signing
 
-Windows: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org). macOS: signed and notarized with PoliNetwork APS's Developer ID. See
-[`docs/code-signing.md`](docs/code-signing.md) for the policy and setup.
+Releases are not signed yet: macOS builds are signed ad hoc, so Gatekeeper asks each user to allow the app once, and
+Windows builds are unsigned, so SmartScreen warns (see the maintainer TODO above). Once set up, Windows builds get free
+code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org), and macOS builds are signed and notarized with PoliNetwork APS's Developer
+ID. See [`docs/code-signing.md`](docs/code-signing.md) for the policy and setup.

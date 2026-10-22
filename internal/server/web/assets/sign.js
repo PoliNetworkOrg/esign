@@ -19,11 +19,19 @@ if (!CSS.supports("-webkit-text-security", "disc")) $("pin").type = "password"
 
 const sections = ["loading", "fatal", "form", "working", "done"]
 let pollTimer = 0
+/** Status polls in a row that got no answer from the agent. */
+let unanswered = 0
 let signing = false
 /** Every document of the link, in order: { ticket, job } or { ticket, error }. */
 let docs = []
 /** Tickets the PIN form signs. */
 let pending = []
+/** Documents the PIN form lists. */
+let listed = []
+/** When the first of the pending jobs expires by this computer's clock (ms since the epoch), Infinity when unknown. */
+let deadline = Infinity
+/** Whether the agent is asking the backend if the pending jobs expired. */
+let checkingExpiry = false
 /** What happened to each ticket: { status, error }. */
 const outcome = new Map()
 let signer = ""
@@ -55,21 +63,38 @@ function notify(status, detail) {
 }
 
 async function api(path, body) {
-  const res = await fetch(path, {
-    method: body ? "POST" : "GET",
-    headers: { "X-PN-eSign": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  })
+  let res
+  try {
+    res = await fetch(path, {
+      method: body ? "POST" : "GET",
+      headers: { "X-PN-eSign": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+    })
+  } catch {
+    throw Object.assign(new Error("PoliNetwork eSign stopped answering. Start it again, then press Sign."), {
+      code: "agent_unreachable",
+    })
+  }
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw Object.assign(new Error(data.error?.message || res.statusText), data.error || {})
   return data
 }
 
-function fatal(message) {
+const START_AGAIN = "Close this window and start again from the dashboard."
+
+/** Ends the page on message, followed by hint ("" for none) and, with setup, a link to the dashboard's setup guide. */
+function fatal(message, { hint = START_AGAIN, setup = false } = {}) {
   stopPolling()
   $("fatal-message").textContent = message
+  $("fatal-hint").textContent = hint
+  $("fatal-hint").hidden = !hint
+  // origin was accepted by the agent before any error that asks for the setup guide.
+  if (setup) $("fatal-setup").href = new URL("/dashboard/esign/setup", origin).href
+  $("fatal-setup-row").hidden = !setup
   show("fatal")
+  // The control that had the focus is gone: move it to the heading, as the done screen does, so it is announced.
+  $("fatal-title").focus()
 }
 
 const JOB_ENDED = new Set([
@@ -78,11 +103,28 @@ const JOB_ENDED = new Set([
   "job_expired",
   "job_done",
   "job_cancelled",
+  "job_failed",
   "origin_forbidden",
   "signer_mismatch",
 ])
-/** Card errors after which the same documents can be signed again. */
-const RETRYABLE = new Set(["card_removed", "device_error", "no_card", "no_reader"])
+/** Card errors that signing again from this window cannot fix. */
+const TERMINAL = new Set(["pin_locked", "card_untrusted", "middleware_missing", "not_paired", "certificate_not_found"])
+/** Errors that need this computer set up: the page links the setup guide. */
+const SETUP = new Set(["middleware_missing", "not_paired", "card_untrusted"])
+/** Errors whose message already says what to do next. */
+const EXPLAINED = new Set(["job_done", "job_cancelled", "document_changed", "job_failed", "pin_locked"])
+/** Errors after which the same documents can be signed again: card errors, and a backend that did not answer. */
+const RETRYABLE = new Set(["card_removed", "device_error", "no_card", "no_reader", "backend_unreachable"])
+
+/** The page's own words for an expired link, the same however the expiry was noticed. */
+const errorText = (error) => (error?.code === "job_expired" ? "This signing link expired." : error?.message)
+
+/** Ends the page on an error that leaves nothing to sign here. */
+function fatalError(error) {
+  const setup = SETUP.has(error?.code)
+  const hint = setup || EXPLAINED.has(error?.code) ? "" : START_AGAIN
+  fatal(errorText(error) || "The signature failed.", { hint, setup })
+}
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 const pageList = new Intl.ListFormat("en-GB", { type: "conjunction" })
@@ -122,9 +164,11 @@ function describeDoc(li, doc) {
   const title = document.createElement("strong")
   title.textContent = titleOf(doc)
   li.append(title)
-  if (!doc.job) {
+  // A document that could not be loaded, or whose link expired while the form was open.
+  const error = outcome.get(doc.ticket)?.error
+  if (!doc.job || error?.code === "job_expired") {
     li.classList.add("failed")
-    line(li, doc.error.message, "bad")
+    line(li, errorText(error), "bad")
     return
   }
   const by = [doc.job.requestedBy && `Requested by ${doc.job.requestedBy}`, doc.job.signer.role].filter(Boolean)
@@ -144,7 +188,7 @@ function describeResult(li, doc) {
   text.append(title)
   if (result.status === "completed") line(text, "Signed", "ok")
   else if (result.status === "skipped") line(text, "Not signed", "bad")
-  else line(text, result.error?.message || "Not signed", "bad")
+  else line(text, errorText(result.error) || "Not signed", "bad")
   li.classList.add("result")
   li.append(mark, text)
 }
@@ -161,7 +205,7 @@ async function load() {
   for (const doc of docs) if (!doc.job) outcome.set(doc.ticket, { status: "failed", error: doc.error })
   const ready = docs.filter((d) => d.job)
   if (!ready.length) {
-    if (docs.length === 1) return fatal(docs[0].error.message)
+    if (docs.length === 1) return fatalError(docs[0].error)
     fillList($("fatal-docs"), docs, describeDoc)
     return fatal("None of these documents can be signed.")
   }
@@ -169,8 +213,23 @@ async function load() {
 }
 
 /** Shows the PIN form for the tickets to sign, listing the given documents. */
-function showForm(listed, toSign, message = "") {
+function showForm(list, toSign, message = "") {
+  setPending(list, toSign)
+  $("pin").value = ""
+  $("remember").checked = false
+  formError(message)
+  show("form")
+  showPIN()
+  startPolling()
+}
+
+/** Sets the tickets that the PIN form signs and the documents it lists, and describes them; the PIN stays. */
+function setPending(list, toSign) {
   pending = toSign
+  listed = list
+  // Go sends a missing time as year 1.
+  const expiries = docs.filter((d) => pending.includes(d.ticket)).map((d) => Date.parse(d.job.expiresAt))
+  deadline = Math.min(...expiries.filter((t) => t > 0))
   const several = docs.length > 1
   const n = pending.length
   $("facts").hidden = several
@@ -190,12 +249,6 @@ function showForm(listed, toSign, message = "") {
     document.title = `Sign “${job.document.title}” · PoliNetwork`
   }
   $("submit").textContent = n === 1 ? "Sign" : `Sign ${n} documents`
-  $("pin").value = ""
-  $("remember").checked = false
-  formError(message)
-  show("form")
-  showPIN()
-  startPolling()
 }
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" })
@@ -205,8 +258,6 @@ function showPIN() {
   const known = Boolean(remembered)
   $("remembered").hidden = !known
   $("pin-fields").hidden = known
-  // A disabled field is left out of the form's validation.
-  $("pin").disabled = known
   if (known) {
     const until = timeFormat.format(new Date(remembered.expires))
     $("remembered-text").textContent =
@@ -238,32 +289,67 @@ function stopPolling() {
   clearInterval(pollTimer)
 }
 
+/** How long the PIN form stays before asking the backend again whether the pending jobs expired. */
+const EXPIRY_RECHECK = 30_000
+
+/**
+ * Once this computer's clock says a pending job expired, asks the backend, which decides: a clock running fast must
+ * not end the window early. A job the backend confirms expired leaves the form, which keeps the others, and shows as
+ * failed; the expiry screen comes only when none is left. The jobs are not cancelled (the dashboard then says they
+ * expired). A signature already running is left to finish.
+ */
+async function checkExpiry() {
+  if (signing || checkingExpiry || $("form").hidden || Date.now() < deadline) return
+  checkingExpiry = true
+  let jobs = []
+  try {
+    ;({ jobs = [] } = await api("/api/job", { tickets: pending, origin }))
+  } catch {
+    // Neither the agent nor the backend says the jobs expired: ask again later.
+  }
+  checkingExpiry = false
+  if (signing || $("form").hidden) return
+  const expired = jobs.filter((d) => pending.includes(d.ticket) && d.error?.code === "job_expired").map((d) => d.ticket)
+  const left = pending.filter((t) => !expired.includes(t))
+  if (!left.length) {
+    notify("error", "job_expired")
+    fatalError({ code: "job_expired" })
+    return
+  }
+  if (expired.length) {
+    for (const ticket of expired) outcome.set(ticket, { status: "failed", error: { code: "job_expired" } })
+    setPending(listed, left)
+    const what = expired.length === 1 ? "One signing link" : `${expired.length} signing links`
+    formError(`${what} expired. You can still sign the rest.`)
+  }
+  // The backend says the jobs left are valid, whatever this computer's clock says: ask again later.
+  if (!(deadline > Date.now())) deadline = Date.now() + EXPIRY_RECHECK
+}
+
 async function pollStatus() {
   if (signing) return
+  checkExpiry()
+  const card = $("card")
   let status
   try {
     status = await api("/api/status")
-  } catch {
+  } catch (error) {
+    if (error.code === "agent_unreachable" && ++unanswered >= 3) {
+      card.dataset.state = "waiting"
+      $("card-text").textContent = "PoliNetwork eSign stopped answering. Start it again."
+    }
     return
   }
+  unanswered = 0
   if (status.busy) return
   setRemembered(status.remembered)
-  const card = $("card")
-  const usable = status.providers.filter((p) => p.available)
-  const readers = [...new Set(usable.flatMap((p) => p.readers || []))]
-  if (status.ready) {
-    card.dataset.state = "ready"
-    $("card-text").textContent = readers.length ? `Card detected on ${readers[0]}` : "Card detected"
-  } else if (usable.length && readers.length) {
-    card.dataset.state = "waiting"
-    $("card-text").textContent = `Place your CIE on the reader (${readers[0]})`
-  } else if (usable.length) {
-    card.dataset.state = "waiting"
-    $("card-text").textContent = "Connect the NFC card reader"
-  } else {
-    card.dataset.state = "waiting"
-    $("card-text").textContent = "No CIE software found. See the setup guide in the dashboard."
-  }
+  const { reader, software } = describeStatus(status)
+  card.dataset.state = status.ready ? "ready" : "waiting"
+  if (status.ready) $("card-text").textContent = reader?.name ? `Card detected on ${reader.name}` : "Card detected"
+  // Unavailable software lists no readers, so it comes first.
+  else if (!software.ok) $("card-text").textContent = "No CIE software found. See the setup guide in the dashboard."
+  else if (!reader?.ok) $("card-text").textContent = "Connect the NFC card reader"
+  else $("card-text").textContent = `Place your CIE on the reader (${reader.name})`
 }
 
 function formError(message) {
@@ -289,9 +375,9 @@ function showResults() {
   if (docs.length === 1) {
     const result = outcome.get(docs[0].ticket)
     if (!all) {
-      // One document: a card error goes back to the PIN, anything else ends here, as before.
+      // One document: an error that retrying can fix goes back to the PIN, anything else ends here, as before.
       if (again.length) return showForm(docs, [docs[0].ticket], result.error.message)
-      return fatal(result.error?.message || "The signature failed.")
+      return fatalError(result.error)
     }
   }
 
@@ -305,7 +391,9 @@ function showResults() {
 
   let message = signer ? `Signed as ${signer}.` : ""
   if (all) message += " You can close this window."
-  else if (again.length) message += " Keep the CIE still on the reader and try again."
+  else if (again.some((d) => outcome.get(d.ticket).error.code !== "backend_unreachable"))
+    message += " Keep the CIE still on the reader and try again."
+  else if (again.length) message += " Try again in a moment."
   else message += " Start again from the dashboard for the others."
   $("done-message").textContent = message.trim()
   $("retry").hidden = again.length === 0
@@ -321,7 +409,11 @@ $("form").addEventListener("submit", async (event) => {
   if (!remembered) {
     const pin = $("pin").value.trim()
     if (!/^\d{8}$/.test(pin)) {
-      formError("Type the 8 digits of your CIE PIN.")
+      formError(
+        /^\d{4}$/.test(pin)
+          ? "Type all 8 digits of your CIE PIN. Other CIE apps ask only for the last 4."
+          : "Type the 8 digits of your CIE PIN.",
+      )
       $("pin").focus()
       return
     }
@@ -339,7 +431,10 @@ $("form").addEventListener("submit", async (event) => {
     result = await api("/api/sign", body)
   } catch (error) {
     signing = false
-    if (JOB_ENDED.has(error.code)) return fatal(error.message)
+    if (JOB_ENDED.has(error.code) || TERMINAL.has(error.code)) {
+      notify("error", error.code)
+      return fatalError(error)
+    }
     // After a failure the agent no longer remembers the PIN, unless the card was busy and was never tried.
     if (error.code !== "busy") remembered = null
     show("form")
@@ -394,5 +489,10 @@ $("retry").addEventListener("click", () => {
 })
 
 for (const button of document.querySelectorAll("[data-close]")) button.addEventListener("click", () => window.close())
+
+// Timers slow down in a covered window or a sleeping laptop: check again as soon as the window shows.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkExpiry()
+})
 
 load()

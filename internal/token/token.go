@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"runtime/debug"
 )
 
 // Provider is one way to reach a signing key: a PKCS#11 module, the card over PC/SC, or a software key.
@@ -19,6 +20,18 @@ type Provider interface {
 	// Open authenticates to the card with the PIN, as the user typed it (8 digits for a CIE), and returns a session
 	// holding the signing certificate. Callers must Close it.
 	Open(ctx context.Context, pin string) (Session, error)
+}
+
+// SafeStatus is p.Status, except that a panic in it gives an unavailable status and an error with the stack, so one
+// broken provider does not take the others down.
+func SafeStatus(ctx context.Context, p Provider) (st Status, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			st = Status{Provider: p.Name(), Detail: "internal error"}
+			err = fmt.Errorf("status panicked: %v\n%s", v, debug.Stack())
+		}
+	}()
+	return p.Status(ctx), nil
 }
 
 // Session is an authenticated card session.

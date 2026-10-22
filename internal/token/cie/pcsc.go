@@ -3,6 +3,7 @@ package cie
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/ebfe/scard"
 
@@ -24,18 +25,32 @@ func establish() (*scard.Context, error) {
 	return ctx, nil
 }
 
+// pcscContext is the part of *scard.Context that lists the readers.
+type pcscContext interface {
+	ListReaders() ([]string, error)
+	GetStatusChange([]scard.ReaderState, time.Duration) error
+}
+
 func (pcscConnector) Readers() ([]Reader, error) {
 	ctx, err := establish()
 	if err != nil {
 		return nil, err
 	}
 	defer ctx.Release()
+	return readersOf(ctx)
+}
+
+func readersOf(ctx pcscContext) ([]Reader, error) {
 	names, err := ctx.ListReaders()
 	if errors.Is(err, scard.ErrNoReadersAvailable) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	// ebfe/scard's macOS GetStatusChange indexes the first state, and panics without one.
+	if len(names) == 0 {
+		return nil, nil
 	}
 	states := make([]scard.ReaderState, len(names))
 	for i, n := range names {

@@ -43,7 +43,7 @@ func (r *reader) swap(t *testing.T) {
 func (r *reader) Name() string { return "reader" }
 func (r *reader) Status(context.Context) token.Status {
 	present := r.present.Load()
-	return token.Status{Provider: "reader", Available: true, CardPresent: &present}
+	return token.Status{Provider: "reader", Available: true, Readers: []string{"reader"}, CardPresent: &present}
 }
 func (r *reader) Open(ctx context.Context, pin string) (token.Session, error) {
 	r.opened.Add(1)
@@ -240,7 +240,10 @@ func TestRememberedPINOtherCard(t *testing.T) {
 func TestRememberedPINError(t *testing.T) {
 	s, _, r := rememberServer(t, time.Minute)
 	cookie := rememberPIN(t, s)
-	s.card.Lock() // keeps the watcher from noticing the removal first
+	// Holding the card keeps the watcher from noticing the removal first.
+	if !s.card.LockWithin(context.Background(), time.Second) {
+		t.Fatal("the card stayed busy")
+	}
 	r.present.Store(false)
 	s.card.Unlock()
 	rec := signWith(t, s, jobRequest{}, cookie)

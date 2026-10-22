@@ -5,6 +5,8 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -53,11 +55,15 @@ type reader struct {
 type connector struct {
 	mu      sync.Mutex
 	readers []*reader
+	err     error // returned by Readers when set
 }
 
 func (c *connector) Readers() ([]cie.Reader, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.err != nil {
+		return nil, c.err
+	}
 	var out []cie.Reader
 	for _, r := range c.readers {
 		cr := cie.Reader{Name: r.name}
@@ -140,10 +146,40 @@ func digest() []byte {
 	return d[:]
 }
 
-func TestStatus(t *testing.T) {
-	if st := cie.NewWithConnector(&connector{}).Status(t.Context()); st.Available || st.Detail != "no smart-card reader" {
+// TestStatusNoReader: without a reader the provider is available with no card, and signing asks for the reader.
+func TestStatusNoReader(t *testing.T) {
+	p := cie.NewWithConnector(&connector{})
+	st := p.Status(t.Context())
+	if !st.Available || st.CardPresent == nil || *st.CardPresent || len(st.Readers) != 0 || st.Detail != "no smart-card reader" {
 		t.Fatalf("no readers: %+v", st)
 	}
+	if _, err := p.Open(t.Context(), "12345678"); token.CodeOf(err) != token.CodeNoReader {
+		t.Fatalf("open without a reader: %v", err)
+	}
+}
+
+// TestStatusNoService: where the smart-card service runs only with a reader connected, a stopped service means no
+// reader, and the provider stays available; elsewhere pcscd is missing, and the provider is not.
+func TestStatusNoService(t *testing.T) {
+	c := &connector{err: fmt.Errorf("%w: the Smart Card service is not running", cie.ErrNoService)}
+	cie.SetServiceNeedsReader(t, true)
+	st := cie.NewWithConnector(c).Status(t.Context())
+	if !st.Available || st.CardPresent == nil || *st.CardPresent || len(st.Readers) != 0 || st.Detail != "no smart-card reader" {
+		t.Fatalf("service stopped without a reader: %+v", st)
+	}
+	cie.SetServiceNeedsReader(t, false)
+	st = cie.NewWithConnector(c).Status(t.Context())
+	if st.Available || st.CardPresent != nil || !strings.Contains(st.Detail, "smart-card service unavailable") {
+		t.Fatalf("pcscd missing: %+v", st)
+	}
+	c.err = errors.New("SCardListReaders failed")
+	cie.SetServiceNeedsReader(t, true)
+	if st := cie.NewWithConnector(c).Status(t.Context()); st.Available {
+		t.Fatalf("other PC/SC failure: %+v", st)
+	}
+}
+
+func TestStatus(t *testing.T) {
 	empty := &connector{readers: []*reader{{name: "ACS ACR1252"}}}
 	st := cie.NewWithConnector(empty).Status(t.Context())
 	if !st.Available || st.CardPresent == nil || *st.CardPresent || len(st.Readers) != 1 {

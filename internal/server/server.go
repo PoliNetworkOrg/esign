@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,6 +53,9 @@ type Options struct {
 	RememberFor time.Duration
 	// CardWatch is how often the card is checked while a PIN is remembered; 2 seconds when zero.
 	CardWatch time.Duration
+	// CardWait is how long a signature waits for the card while a status check or the card watcher holds it;
+	// 3 seconds when zero.
+	CardWait time.Duration
 }
 
 // Backend is the part of the dashboard's API the agent uses.
@@ -66,7 +70,7 @@ type Backend interface {
 type Server struct {
 	opts Options
 	// card serializes signatures: one card, one operation at a time.
-	card   sync.Mutex
+	card   cardLock
 	static http.Handler
 
 	// memMu guards mem, the PIN the user chose to remember (see remember.go). Lock it after card, never before.
@@ -89,8 +93,42 @@ func New(opts Options) *Server {
 	if opts.CardWatch <= 0 {
 		opts.CardWatch = defaultCardWatch
 	}
+	if opts.CardWait <= 0 {
+		opts.CardWait = defaultCardWait
+	}
 	sub, _ := fs.Sub(webFS, "web")
-	return &Server{opts: opts, static: http.FileServerFS(sub)}
+	return &Server{opts: opts, card: make(cardLock, 1), static: http.FileServerFS(sub)}
+}
+
+// defaultCardWait outlasts a status check, which the status pages make every 1.5 seconds.
+const defaultCardWait = 3 * time.Second
+
+// cardLock is a mutex that a signature can wait for with a deadline.
+type cardLock chan struct{}
+
+func (l cardLock) Unlock() { <-l }
+
+func (l cardLock) TryLock() bool {
+	select {
+	case l <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// LockWithin waits for the lock until d passes or ctx ends, and reports whether it got it.
+func (l cardLock) LockWithin(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case l <- struct{}{}:
+		return true
+	case <-timer.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // Handler returns the HTTP handler.
@@ -170,7 +208,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'")
 		// Blocks DNS rebinding: a foreign host name resolving to 127.0.0.1 is refused.
 		if !s.hostAllowed(r.Host) {
-			http.Error(w, "Address the agent as 127.0.0.1 or localhost", http.StatusMisdirectedRequest)
+			http.Error(w, "Address PoliNetwork eSign as 127.0.0.1 or localhost", http.StatusMisdirectedRequest)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -209,6 +247,15 @@ func (s *Server) api(handler func(w http.ResponseWriter, r *http.Request)) http.
 			writeError(w, http.StatusUnsupportedMediaType, "bad_request", "Send JSON")
 			return
 		}
+		defer func() {
+			if v := recover(); v != nil {
+				if v == http.ErrAbortHandler {
+					panic(v)
+				}
+				s.opts.Logger.Error("api panic", "path", r.URL.Path, "panic", v, "stack", string(debug.Stack()))
+				writeError(w, http.StatusInternalServerError, "internal", "PoliNetwork eSign hit an unexpected error. Try again.")
+			}
+		}()
 		handler(w, r)
 	}
 }
@@ -224,10 +271,19 @@ type statusResponse struct {
 	Remembered *rememberedInfo `json:"remembered,omitempty"`
 }
 
+// providerStatus is p's status; a panic in it is logged and reported as unavailable.
+func (s *Server) providerStatus(ctx context.Context, p token.Provider) token.Status {
+	st, err := token.SafeStatus(ctx, p)
+	if err != nil {
+		s.opts.Logger.Error("provider status", "provider", p.Name(), "error", err)
+	}
+	return st
+}
+
 func (s *Server) statuses(ctx context.Context) statusResponse {
 	res := statusResponse{Agent: "polinetwork-esign", Version: s.opts.Version, OS: osName()}
 	for _, p := range s.opts.Providers {
-		st := p.Status(ctx)
+		st := s.providerStatus(ctx, p)
 		res.Providers = append(res.Providers, st)
 		if st.Available && st.CardPresent != nil && *st.CardPresent {
 			res.Ready = true
@@ -237,7 +293,8 @@ func (s *Server) statuses(ctx context.Context) statusResponse {
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	// While a signature runs the card is busy: report it rather than queueing behind it.
+	// While a signature runs the card is busy: report it rather than queueing behind it. A signature arriving
+	// meanwhile waits for this check (Options.CardWait).
 	if !s.card.TryLock() {
 		writeJSON(w, http.StatusOK, map[string]any{"busy": true})
 		return
@@ -281,16 +338,16 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) (*jobRequest, Ba
 		valid = valid && backend.TicketPattern.MatchString(t)
 	}
 	if !valid {
-		writeError(w, http.StatusBadRequest, "ticket_invalid", "This signing link is not valid. Start again from the dashboard.")
+		writeError(w, http.StatusBadRequest, "ticket_invalid", "This signing link is not valid.")
 		return nil, nil, false
 	}
 	if len(req.Tickets) > MaxTickets {
-		writeError(w, http.StatusBadRequest, "too_many_tickets", "Sign at most "+strconv.Itoa(MaxTickets)+" documents at a time. Start again from the dashboard.")
+		writeError(w, http.StatusBadRequest, "too_many_tickets", "Sign at most "+strconv.Itoa(MaxTickets)+" documents at a time.")
 		return nil, nil, false
 	}
 	if !OriginAllowed(s.opts.AllowedOrigins, req.Origin) {
 		s.opts.Logger.Warn("refused dashboard origin", "origin", req.Origin)
-		writeError(w, http.StatusForbidden, "origin_forbidden", "This agent does not sign for "+req.Origin+".")
+		writeError(w, http.StatusForbidden, "origin_forbidden", "PoliNetwork eSign does not sign for "+req.Origin+".")
 		return nil, nil, false
 	}
 	return &req, s.opts.Backend(req.Origin), true
@@ -358,7 +415,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	for _, t := range req.Tickets {
 		wg.Go(func() {
-			if err := be.Fail(ctx, t, "cancelled", "Cancelled in the agent"); err != nil {
+			if err := be.Fail(ctx, t, "cancelled", "Cancelled in PoliNetwork eSign"); err != nil {
 				s.opts.Logger.Warn("cancel job", "error", err)
 			}
 		})
@@ -378,11 +435,15 @@ var fallbackCodes = map[token.Code]bool{
 }
 
 // open authenticates with the first provider that sees a card, falling back only when the provider says no PIN was
-// sent: a PIN that reached a module or card may have used an attempt, and must not be tried again elsewhere.
+// sent: a PIN that reached a module or card may have used an attempt, and must not be tried again elsewhere. When no
+// provider can be tried, the error says what is missing: a reader, CIE software or the card.
 func (s *Server) open(ctx context.Context, pin string) (token.Session, token.Provider, error) {
 	var firstErr error
+	readers, available := false, false
 	for _, p := range s.opts.Providers {
-		st := p.Status(ctx)
+		st := s.providerStatus(ctx, p)
+		readers = readers || len(st.Readers) > 0
+		available = available || st.Available
 		if !st.Available || (st.CardPresent != nil && !*st.CardPresent) {
 			continue
 		}
@@ -398,10 +459,15 @@ func (s *Server) open(ctx context.Context, pin string) (token.Session, token.Pro
 			firstErr = err
 		}
 	}
-	if firstErr == nil {
-		firstErr = token.Errorf(token.CodeNoCard, "no provider sees a card")
+	switch {
+	case firstErr != nil:
+		return nil, nil, firstErr
+	case !readers:
+		return nil, nil, token.Errorf(token.CodeNoReader, "no provider sees a reader")
+	case !available:
+		return nil, nil, token.Errorf(token.CodeMiddlewareMissing, "no provider is available")
 	}
-	return nil, nil, firstErr
+	return nil, nil, token.Errorf(token.CodeNoCard, "no provider sees a card")
 }
 
 // signResult is what happened to one ticket: "completed", "failed" or "skipped" (not tried after a card error).
@@ -424,22 +490,25 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if req.PIN != "" && !token.ValidPIN(req.PIN, 8) {
+		writeTokenError(w, token.Errorf(token.CodePinInvalid, "malformed PIN"))
+		return
+	}
+	// A status check or the card watcher holds the card only briefly: wait for it rather than refusing the PIN.
+	if !s.card.LockWithin(r.Context(), s.opts.CardWait) {
+		writeError(w, http.StatusConflict, string(token.CodeBusy), "Another signature is in progress.")
+		return
+	}
+	defer s.card.Unlock()
 	var mem *remembered
 	if req.PIN == "" {
+		// Recalled with the card held, after any check of the watcher that found the card gone.
 		if mem, req.PIN = s.recall(r); mem == nil {
 			clearRememberCookie(w)
 			writeError(w, http.StatusUnauthorized, codePINRequired, "Type your CIE PIN.")
 			return
 		}
-	} else if !token.ValidPIN(req.PIN, 8) {
-		writeTokenError(w, token.Errorf(token.CodePinInvalid, "malformed PIN"))
-		return
 	}
-	if !s.card.TryLock() {
-		writeError(w, http.StatusConflict, string(token.CodeBusy), "Another signature is in progress.")
-		return
-	}
-	defer s.card.Unlock()
 
 	// The jobs say how many signatures to expect. One that cannot be fetched (it ended meanwhile) is not signed.
 	fetchCtx, cancelFetch := context.WithTimeout(r.Context(), 20*time.Second)
@@ -617,7 +686,7 @@ var messageOf = map[token.Code]string{
 	token.CodeNotFound:          "No signing certificate found on the card.",
 	token.CodePinIncorrect:      "Wrong PIN.",
 	token.CodePinInvalid:        "Type the 8 digits of your CIE PIN.",
-	token.CodePinLocked:         "Your PIN is blocked. Unblock it with the PUK in the CIE ID app.",
+	token.CodePinLocked:         "Your CIE PIN is blocked. Unblock it with your PUK in the CieID app on your phone or in CIE ID on this computer, then sign again from the dashboard. The PUK’s first half is on the receipt from the Comune, the second half in the letter that came with the card.",
 	token.CodeBusy:              "Another signature is in progress.",
 	token.CodeDevice:            "The card could not complete the operation. Try again.",
 }

@@ -7,6 +7,7 @@
     <title>Sign with CIE · PoliNetwork</title>
     <link rel="icon" href="/assets/logo.png" />
     <link rel="stylesheet" href="/assets/style.css" />
+    <script src="/assets/status.js" defer></script>
     <script src="/assets/sign.js" defer></script>
   </head>
   <body>
@@ -20,15 +21,18 @@
         <p id="loading-text" class="muted">Loading the document…</p>
       </section>
 
-      <section id="fatal" class="panel" hidden>
-        <h1>Cannot sign</h1>
+      <section id="fatal" class="panel" hidden aria-live="polite">
+        <h1 id="fatal-title" tabindex="-1">Cannot sign</h1>
         <p id="fatal-message" class="muted"></p>
         <ul id="fatal-docs" class="docs" hidden></ul>
-        <p class="muted">Close this window and start again from the dashboard.</p>
+        <p id="fatal-hint" class="muted"></p>
+        <p id="fatal-setup-row" class="muted" hidden>
+          <a id="fatal-setup" target="_blank" rel="noreferrer">Open the setup guide</a>
+        </p>
         <button type="button" class="secondary" data-close>Close</button>
       </section>
 
-      <form id="form" class="panel" hidden autocomplete="off">
+      <form id="form" class="panel" hidden autocomplete="off" novalidate>
         <h1 id="heading"></h1>
         <dl id="facts" class="facts" hidden>
           <div><dt>File</dt><dd id="doc-file"></dd></div>
@@ -69,7 +73,10 @@
             data-form-type="other"
             aria-describedby="pin-hint"
           />
-          <p id="pin-hint" class="hint">The 8 digits of your CIE PIN. It stays on this computer.</p>
+          <p id="pin-hint" class="hint">
+            All 8 digits: the first 4 are on the Comune’s receipt, the last 4 in the letter that came with the card. It
+            stays on this computer.
+          </p>
           <label id="remember-row" class="check-row" hidden>
             <input id="remember" type="checkbox" />
             <span id="remember-text"></span>
