@@ -14,11 +14,12 @@ finalized by the PoliNetwork backend (PAdES), the agent only signs a digest with
 - A CIE (Carta d'Identità Elettronica 3.0) and its 8-digit PIN.
 - A contactless (NFC) smart-card reader, for example a bit4id miniLector AIR NFC. Most readers work without drivers on
   Windows and macOS; on Linux they need `pcscd` (see below).
-- Optionally, CIE software for your system. The agent tries, in order:
-  - `cie-mw`, the official middleware: **Software CIE** (Mac App Store) on macOS, **CIE ID** on Windows and Linux,
-    from [cartaidentita.interno.gov.it](https://www.cartaidentita.interno.gov.it/pa-e-imprese/documentazione-middleware-cie/).
-    It works only with cards "paired" on this computer, a one-time step with the full PIN. If the card is not paired
-    yet, the agent pairs it through the middleware the first time you sign.
+- **CIE ID**, the official CIE app, from
+  [cartaidentita.interno.gov.it](https://www.cartaidentita.interno.gov.it/pa-e-imprese/documentazione-middleware-cie/)
+  (on the Mac App Store it is listed as "Software CIE"). The agent tries, in order:
+  - `cie-mw`, the middleware that comes with CIE ID. It works only with cards "paired" on this computer, a one-time
+    step with the full PIN. If the card is not paired yet, the agent pairs it through the middleware the first time
+    you sign; on macOS, pair it in CIE ID when you install it (see below).
   - `opencie`, [OpenCIE](https://github.com/M0Rf30/opencie-pkcs11): put its PKCS#11 module
     (`libopencie-pkcs11.so`, `.dylib` or `.dll`) next to the agent or in the agent's configuration folder. It also
     keeps a pairing cache, which the agent creates the same way.
@@ -51,14 +52,20 @@ read. The dashboard never sees the PIN.
 
 Download the file for your system from the [latest release](https://github.com/PoliNetworkOrg/esign/releases/latest).
 Installing needs no administrator rights: the agent is installed for your user only, starts when you log in, and lets
-the dashboard start it with a `polinetwork-esign://open` link when it is not running.
+the dashboard start it with a `polinetwork-esign://open` link when it is not running. To update on macOS or Windows,
+download the latest version and open it the same way: it replaces the one installed.
 
 Until v0.1.x the agent was called PoliNetwork Sign Agent. Installing PoliNetwork eSign removes it (app, login item,
 link handler, Debian package) and keeps its configuration and card pairings.
 
 ### macOS (Apple Silicon and Intel)
 
-1. Download `PoliNetwork-eSign-<version>-macos.dmg` (or the `.zip`) and open it.
+First install **CIE ID** from the Mac App Store, where it is listed as "Software CIE", and open it: on an Apple Silicon
+Mac, accept when macOS offers to install Rosetta. Pair your card in it with the 8-digit PIN. If it pairs there, signing
+works with PoliNetwork eSign too; if it does not, ask whoever sent you the signing request. Then:
+
+1. Download [`PoliNetwork-eSign-macos.dmg`](https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg)
+   (or the `.zip`) and open it.
 2. Open **PoliNetwork eSign**. The app is not notarized yet, so macOS refuses the first time: open
    **System Settings > Privacy & Security**, choose **Open Anyway** next to the message about PoliNetwork eSign,
    and confirm.
@@ -66,14 +73,16 @@ link handler, Debian package) and keeps its configuration and card pairings.
    Items**) and opens `http://127.0.0.1:47321/` in your browser. The page shows whether the reader, the CIE and the
    signing software are ready: with the CIE on the reader it says "Ready to sign".
 
-The official Software CIE module is built for Intel Macs only. On Apple Silicon the agent runs it in a helper process
-under Rosetta: if macOS offers to install Rosetta, accept (or run `softwareupdate --install-rosetta`). The first time you
-sign, macOS asks whether **PoliNetwork eSign** may access data from other apps: allow it, so the agent can read the
-card pairing that Software CIE keeps in its own folder.
+CIE ID's middleware is built for Intel Macs only. On Apple Silicon the agent runs it in a helper process under Rosetta,
+which opening CIE ID installs (or run `softwareupdate --install-rosetta`). The first time you sign, macOS asks whether
+**PoliNetwork eSign** may access data from other apps: allow it, so the agent can read the card pairing that CIE ID
+keeps in its own folder.
 
 ### Windows
 
-1. Download `PoliNetwork-eSign-<version>-windows-amd64.zip`, extract it and double-click `esign.exe`.
+1. Download
+   [`PoliNetwork-eSign-windows-amd64.zip`](https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-windows-amd64.zip),
+   extract it and double-click `esign.exe`.
 2. The program is not code-signed yet: if SmartScreen warns, choose **More info > Run anyway**.
 3. It copies itself to `%LOCALAPPDATA%\PoliNetwork\eSign`, starts at login, appears in **Settings > Apps >
    Installed apps**, and opens `http://127.0.0.1:47321/` in your browser, which shows whether the reader, the CIE and
@@ -139,8 +148,10 @@ The official CIE ID middleware for Linux is published for x86_64 only (`.deb`, `
 
 ## Using it
 
-In the dashboard, open a document and choose **Sign with CIE**. A small window from the agent asks for your PIN; keep
-the card on the reader until it says the document is signed. If the dashboard says PoliNetwork eSign is not running,
+In the dashboard, open a document and choose **Sign with CIE**. A small window from the agent opens: place the CIE on
+the reader first, and the PIN field opens as soon as the agent sees the card. If you take the card away, the field
+and **Sign** wait for it again, keeping what you typed. Keep the card on the reader until the window says the document
+is signed. If the dashboard says PoliNetwork eSign is not running,
 use its **Start PoliNetwork eSign** button (or open the app again).
 
 You type the PIN once even when there is more to sign: a document where you sign in several places (each place is a
@@ -148,8 +159,17 @@ separate signature), or up to 10 documents that the dashboard sends together. Th
 after the other, and shows which were signed. If the dashboard refuses one document (for example because it changed),
 the others are still signed; if the card stops answering, the rest are left unsigned and you can try again.
 
+When the dashboard no longer accepts your version of PoliNetwork eSign, the window says so before it asks for the
+PIN, with the download for your system: on macOS and Windows, open the downloaded file and it replaces the old version;
+on Linux, update the package.
+
 A wrong PIN uses one of the card's three attempts; the agent never retries a PIN by itself. After three wrong PINs the
-card is blocked: unblock it with the PUK in the CIE software.
+card is blocked: unblock it with the PUK in CIE ID. The agent counts the wrong PINs typed in a row for each signer, even
+when the window is closed and opened again, and uses the attempts left that the card reports when it reports them (CIE
+ID's middleware does not). Before the last attempt the window warns above the PIN field and does not offer to remember
+the PIN. The count clears once a PIN opens a card that the dashboard accepts for the signer, even if the signature then
+fails; it is kept in memory only, until the agent stops. The eye
+at the end of the PIN field shows the digits, to check them before signing.
 
 ## Troubleshooting
 
@@ -168,16 +188,20 @@ file as above is easier.
 
 Common reports:
 
-- **module: not found** — the CIE software is not installed, or is installed somewhere unusual: set its path in the
-  configuration file (`pkcs11Module` or `openCieModule`).
+- **module: not found** under `cie-mw (CIE ID)` — CIE ID is not installed, or is installed somewhere unusual: set its
+  path in the configuration file (`pkcs11Module`; `openCieModule` for OpenCIE).
 - **loading: impossible … x86_64 only** — an Apple Silicon Mac running a build without Intel code; install the release
   app, which contains both.
 - **readers: none** — the reader is not connected, or (Linux) `pcscd` is not running.
 - **card: false** — put the CIE flat on the reader and keep it still.
-- "This CIE is not set up on this computer yet" when signing — the middleware does not export its pairing function:
-  pair the card in Software CIE / CIE ID.
+- **paired cards: none** (macOS) — open CIE ID and pair the card with its 8-digit PIN.
+- "This CIE is not paired with this computer yet" when signing — CIE ID's middleware does not export its pairing
+  function: pair the card in CIE ID.
 - **agent: NOT running; another program uses port 47321** — close that program, or change `port` in the configuration
   (the dashboard expects 47321).
+- The dashboard says that PoliNetwork eSign isn't running while it runs, and the log has `refused dashboard origin` —
+  the agent does not sign for that dashboard (a staging copy, a new domain): add its origin to `allowedOrigins` in the
+  configuration (`doctor` lists the allowed ones).
 
 Logs: macOS `~/Library/Logs/PoliNetwork eSign.log`; Windows `%APPDATA%\PoliNetwork eSign\esign.log`;
 Linux `journalctl --user -u polinetwork-esign`.
@@ -199,7 +223,7 @@ eSign` on macOS, `%APPDATA%\PoliNetwork eSign` on Windows, `~/.config/PoliNetwor
 ```
 
 `worker` says when a PKCS#11 module runs in a separate helper process: `auto` when needed (another CPU architecture,
-or Software CIE's environment), `always` (a crashing middleware cannot stop the agent), or `never`.
+or CIE ID's environment on macOS), `always` (a crashing middleware cannot stop the agent), or `never`.
 
 ## Commands
 
@@ -263,15 +287,38 @@ provider accepts it only when a test hands it that CSCA.
 The dashboard opens `/sign?origin=<dashboard>&ticket=<t1>&ticket=<t2>…`, one single-use ticket per document (1 to 10;
 repeats are dropped). The page talks only to the agent:
 
-- `POST /api/job` `{tickets, origin}` returns `{jobs: [{ticket, job} | {ticket, error}]}`;
+- `GET /api/status` describes the providers, readers and card. Its `card` is `present` when a provider sees the card,
+  `absent` when no provider could be tried, so a signature would fail before the PIN is sent (no reader, no card, no
+  CIE software), and `unknown` when a provider that cannot tell would be tried. The page takes the PIN only when it
+  is not `absent`, and waits for two answers in a row without the card before it holds the PIN back again; after one,
+  it asks again before it sends a PIN. Three failed answers in a row count as `unknown`;
+- `POST /api/job` `{tickets, origin}` returns `{jobs: [{ticket, job} | {ticket, error}], attempts}`. `attempts` is
+  `{left, card}` when one of the jobs' signers typed a wrong PIN since their card last opened: the attempts left before
+  the card blocks the PIN, as the card reported them (`card: true`) or as the agent counted them, which misses wrong
+  PINs typed in other apps; `null` otherwise;
 - `POST /api/sign` `{tickets, origin, pin}` opens one card session and, for each job in order, repeats
   `prepare` (with `protocol: 2`), card signature and `complete` until the backend answers `completed`. It returns
-  `{results: [{ticket, status: completed | failed | skipped, error?}], signer}`. If the session does not open (wrong
-  PIN, no card) it returns that error and reports it on every job;
+  `{results: [{ticket, status: completed | failed | skipped, error?}], signer, attempts}`, with `attempts` as they are
+  after this PIN. If the session does not open (wrong PIN, no card) it returns that error and reports it on every job;
+  a wrong PIN's error has `attempts` too;
 - `POST /api/cancel` `{tickets, origin}` reports the jobs as cancelled.
 
 The agent calls the dashboard's `/api/esign/agent/jobs/{ticket}[/prepare|/complete|/fail]` with each ticket. A backend
 older than protocol 2 sends no steps, and its jobs are signed once.
+
+The page tells the dashboard what happens with `postMessage({type: "pn-esign", status, detail, …})`, only to the
+`origin` of its address and only when the agent signs for it: the agent checks the origin when it serves the page, so
+the page knows where it may post before making any request. A dashboard that the agent does not sign for gets no
+message at all, not even `ready`, so it takes the agent for one that is not running: other sites must not learn that
+the agent runs on this computer.
+
+- `ready`, first thing when the page runs, with the agent's version in `detail` (`0.4.0`, or `dev`). A dashboard that
+  gets no `ready` can tell that the agent is not running.
+- `error`, with the error code in `detail`. When the window cannot go on (the link is not valid, the jobs could not be
+  loaded or expired, the card cannot be used, …) the message also has `message`, the text the window shows, and
+  `fatal: true`. When the backend answers `agent_outdated`, on the job or on `prepare`, the window shows "Update
+  PoliNetwork eSign" with the download for its system instead of the PIN form.
+- `completed` when every document was signed, `cancelled` when the signer cancelled.
 
 Builds:
 
@@ -284,17 +331,23 @@ Releases: push a `v*` tag; `.github/workflows/release.yml` builds everything, ad
 GitHub release (a pre-release for tags such as `v1.2.3-rc.1`). Releases that are not pre-releases also update the APT
 and DNF repositories and the AUR package: see [`docs/linux-packages.md`](docs/linux-packages.md).
 
+The macOS and Windows files have the same names in every release (`PoliNetwork-eSign-macos.dmg`,
+`PoliNetwork-eSign-macos.zip`, `PoliNetwork-eSign-windows-amd64.zip`), so
+`https://github.com/PoliNetworkOrg/esign/releases/latest/download/<name>` always downloads the newest release that is
+not a pre-release. The dashboard and the agent's "Update PoliNetwork eSign" screen link the `.dmg` and the Windows
+`.zip` that way, and the release fails if either is missing.
+
 ### Maintainer TODO before a public release
 
 - **macOS notarization.** The app is only signed ad hoc, so Gatekeeper blocks it until the user allows it. Sign with a
   Developer ID Application certificate, with the hardened runtime and the
   `com.apple.security.cs.disable-library-validation` entitlement (the agent loads the CIE middleware, which another team
   signed), notarize with `xcrun notarytool submit --wait` and staple (`xcrun stapler staple`) both the app and the
-  `.dmg`. A stable signature also keeps macOS from asking again, after each update, for access to Software CIE's data.
+  `.dmg`. A stable signature also keeps macOS from asking again, after each update, for access to CIE ID's data.
 - **Windows code signing** (Authenticode) of `esign.exe`, to avoid SmartScreen warnings; an icon and version
   resource would help too.
 - **Test on real hardware**: Windows 10/11 x64 (and Windows on ARM, which runs the x64 build emulated), Intel and Apple
-  Silicon Macs with Software CIE, and the Linux distributions to support, each with a paired card.
+  Silicon Macs with CIE ID, and the Linux distributions to support, each with a paired card.
 
 ## Code signing
 

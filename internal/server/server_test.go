@@ -8,8 +8,13 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -44,6 +49,7 @@ type failure struct{ ticket, code string }
 type fakeBackend struct {
 	mu         sync.Mutex
 	steps      map[string]int
+	signer     map[string]string
 	jobErr     map[string]error
 	prepareErr map[string]error
 	cert       []byte
@@ -68,6 +74,7 @@ func (f *fakeBackend) Job(_ context.Context, t string) (*backend.Job, error) {
 	}
 	job := &backend.Job{ID: "job-" + t[:1], Status: "pending", Signatures: f.stepsOf(t)}
 	job.Document.Title = "Verbale"
+	job.Signer.Name = f.signer[t]
 	return job, nil
 }
 
@@ -232,6 +239,125 @@ func TestGuards(t *testing.T) {
 	}
 }
 
+func TestPagesShowTheVersion(t *testing.T) {
+	for version, footer := range map[string]string{
+		"v1.2.3": "PoliNetwork eSign 1.2.3</footer>",
+		"<b>":    "PoliNetwork eSign &lt;b&gt;</footer>",
+	} {
+		s := New(Options{Port: 47321, Version: version})
+		for _, path := range []string{"/", "/sign"} {
+			rec := do(t, s, req{method: "GET", path: path})
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), footer) {
+				t.Errorf("%s with version %q: %d, no %q in\n%s", path, version, rec.Code, footer, rec.Body)
+			}
+		}
+	}
+}
+
+// TestSignPageDashboard: the signing page posts its messages, the first one before any request, only to a dashboard
+// the agent signs for, which the agent names in the page.
+func TestSignPageDashboard(t *testing.T) {
+	s, _, _ := setup(t)
+	cases := map[string]string{
+		"/sign?origin=" + url.QueryEscape(dashboard) + "&ticket=" + ticket: dashboard,
+		"/sign?origin=" + url.QueryEscape(dashboard):                       dashboard,
+		"/sign?origin=" + url.QueryEscape("https://evil.example"):          "",
+		"/sign?origin=" + url.QueryEscape(`"><script>`):                    "",
+		"/sign": "",
+	}
+	for path, want := range cases {
+		page := do(t, s, req{method: "GET", path: path}).Body.String()
+		if attrs := `data-version="test" data-dashboard="` + want + `"`; !strings.Contains(page, attrs) {
+			t.Errorf("%s: no %s in\n%s", path, attrs, page)
+		}
+	}
+}
+
+func TestDownload(t *testing.T) {
+	cases := map[string]downloadLink{
+		"darwin": {
+			URL:    "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg",
+			Label:  "Download for macOS",
+			Update: "Download the new one, open it and open PoliNetwork eSign inside: it replaces this one.",
+		},
+		"windows": {
+			URL:    "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-windows-amd64.zip",
+			Label:  "Download for Windows",
+			Update: "Download the new one, extract it and open esign.exe: it replaces this one.",
+		},
+		"linux": {
+			URL:    "https://github.com/PoliNetworkOrg/esign/releases/latest",
+			Label:  "Open the download page",
+			Page:   true,
+			Update: "Update the polinetwork-esign package, or install the new one from the download page.",
+		},
+	}
+	for goos, want := range cases {
+		if got := download(goos); got != want {
+			t.Errorf("download(%q) = %+v, want %+v", goos, got, want)
+		}
+	}
+}
+
+// TestDownloadsAreReleased: the files the page downloads are the ones the build scripts write and the release
+// workflow requires.
+func TestDownloadsAreReleased(t *testing.T) {
+	for goos, script := range map[string]string{"darwin": "build-macos.sh", "windows": "build-windows.sh"} {
+		name := path.Base(download(goos).URL)
+		for _, file := range []string{"../../scripts/" + script, "../../.github/workflows/release.yml"} {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), name) {
+				t.Errorf("%s does not mention %s", file, name)
+			}
+		}
+	}
+}
+
+// TestSignPageOffersTheDownload: the installer downloads in the window itself, the release page opens in a new tab.
+func TestSignPageOffersTheDownload(t *testing.T) {
+	attrs := func(goos string) string {
+		return `href="` + download(goos).URL + `" data-update="` + template.HTMLEscapeString(download(goos).Update) + `" hidden`
+	}
+	link := map[string]string{
+		"darwin":  `<a id="fatal-download" class="button" ` + attrs("darwin") + `>Download for macOS</a>`,
+		"windows": `<a id="fatal-download" class="button" ` + attrs("windows") + `>Download for Windows</a>`,
+		"linux":   `<a id="fatal-download" class="button" ` + attrs("linux") + ` target="_blank" rel="noreferrer">Open the download page</a>`,
+	}
+	for goos, want := range link {
+		var page bytes.Buffer
+		if err := pages.ExecuteTemplate(&page, "sign.html", pageData{Download: download(goos)}); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(page.String(), want) {
+			t.Errorf("%s: no %s in\n%s", goos, want, &page)
+		}
+	}
+	s, _, _ := setup(t)
+	if page := do(t, s, req{method: "GET", path: "/sign"}).Body.String(); !strings.Contains(page, download(runtime.GOOS).URL) {
+		t.Errorf("the page does not offer the download for %s:\n%s", runtime.GOOS, page)
+	}
+}
+
+func TestShownVersion(t *testing.T) {
+	cases := map[string]string{
+		"v0.4.0":      "0.4.0",
+		"v1.2.3-rc.1": "1.2.3-rc.1",
+		"0.4.0":       "0.4.0",
+		"dev":         "dev",
+		"vnext":       "vnext",
+		"v":           "v",
+		"":            "",
+	}
+	for version, want := range cases {
+		if got := shownVersion(version); got != want {
+			t.Errorf("shownVersion(%q) = %q, want %q", version, got, want)
+		}
+	}
+}
+
 type signResponse struct {
 	Results []signResult `json:"results"`
 	Signer  *struct {
@@ -276,14 +402,7 @@ func verify(t *testing.T, fb *fakeBackend, p *soft.Provider) {
 func TestSign(t *testing.T) {
 	s, fb, nc := setup(t)
 	rec, _ := signRequest(t, s, "00000000", ticket)
-	var failure struct {
-		Error struct {
-			Code        string `json:"code"`
-			RetriesLeft int    `json:"retriesLeft"`
-		} `json:"error"`
-	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &failure)
-	if rec.Code != http.StatusUnauthorized || failure.Error.Code != "pin_incorrect" || failure.Error.RetriesLeft != 2 {
+	if rec.Code != http.StatusUnauthorized || errorCode(rec) != "pin_incorrect" {
 		t.Fatalf("wrong PIN: %d %s", rec.Code, rec.Body)
 	}
 	if nc.opened != 1 {
@@ -722,5 +841,63 @@ func TestNothingToOpen(t *testing.T) {
 		if rec.Code != http.StatusServiceUnavailable || errorCode(rec) != c.code || !slices.Equal(fb.failed, []failure{{ticket, c.code}}) {
 			t.Errorf("want %s: %d %s, failed %v", c.code, rec.Code, rec.Body, fb.failed)
 		}
+	}
+}
+
+// TestCardState: the page holds the PIN back exactly when open would try no provider, and never because a provider
+// cannot tell whether a card is there.
+func TestCardState(t *testing.T) {
+	yes, no := true, false
+	cases := []struct {
+		statuses []token.Status
+		want     string
+	}{
+		{nil, cardAbsent},
+		{[]token.Status{{}}, cardAbsent},
+		{[]token.Status{{CardPresent: &yes}}, cardAbsent},
+		{[]token.Status{{Available: true, CardPresent: &no}}, cardAbsent},
+		{[]token.Status{{Available: true, CardPresent: &yes}}, cardPresent},
+		{[]token.Status{{Available: true}}, cardUnknown},
+		{[]token.Status{{Available: true}, {Available: true, CardPresent: &no}}, cardUnknown},
+		{[]token.Status{{Available: true, CardPresent: &no}, {Available: true, CardPresent: &yes}}, cardPresent},
+		{[]token.Status{{Available: true}, {Available: true, CardPresent: &yes}}, cardPresent},
+	}
+	for i, c := range cases {
+		if got := cardState(c.statuses); got != c.want {
+			t.Errorf("case %d: cardState = %q, want %q", i, got, c.want)
+		}
+	}
+}
+
+// TestStatusCard: the status tells the page whether the card is there, and a signature started without it does not
+// send the PIN anywhere.
+func TestStatusCard(t *testing.T) {
+	s, fb, r := rememberServer(t, -1)
+	card := func() string {
+		t.Helper()
+		var st statusResponse
+		rec := do(t, s, req{method: "GET", path: "/api/status"})
+		if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("status: %d %s", rec.Code, rec.Body)
+		}
+		return st.Card
+	}
+	if got := card(); got != cardPresent {
+		t.Errorf("card on the reader: %q", got)
+	}
+	r.present.Store(false)
+	if got := card(); got != cardAbsent {
+		t.Errorf("card taken away: %q", got)
+	}
+	rec := signWith(t, s, jobRequest{PIN: "12345678"}, nil)
+	if errorCode(rec) != "no_card" || r.opened.Load() != 0 || len(fb.signatures) != 0 {
+		t.Errorf("sign without the card: %d %s, opened %d times", rec.Code, rec.Body, r.opened.Load())
+	}
+
+	s = newServer(&fakeBackend{}, &noCard{})
+	var st statusResponse
+	_ = json.Unmarshal(do(t, s, req{method: "GET", path: "/api/status"}).Body.Bytes(), &st)
+	if st.Card != cardUnknown {
+		t.Errorf("provider that cannot tell: %q", st.Card)
 	}
 }

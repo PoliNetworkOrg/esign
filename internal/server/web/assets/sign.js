@@ -1,21 +1,30 @@
 "use strict"
 
 // The dashboard opens /sign?origin=…&ticket=…[&ticket=…] in a popup, one ticket per document. The tickets are moved
-// to sessionStorage and removed from the address bar, so they do not stay in the history.
+// to sessionStorage and removed from the address bar, so they do not stay in the history. The origin stays there, so
+// that the agent can check it again when the page is reloaded.
 const MAX_TICKETS = 10
 const params = new URLSearchParams(location.search)
 if (params.has("ticket")) {
   sessionStorage.setItem("tickets", JSON.stringify([...new Set(params.getAll("ticket"))]))
-  sessionStorage.setItem("origin", params.get("origin") || "")
-  history.replaceState(null, "", "/sign")
+  history.replaceState(null, "", `/sign?${new URLSearchParams({ origin: params.get("origin") || "" })}`)
 }
 const tickets = readTickets()
-const origin = sessionStorage.getItem("origin") || ""
+const origin = params.get("origin") || ""
+/**
+ * Where the page's messages go: origin when the agent signs for it, "" otherwise. The agent checked it when serving
+ * the page, so even the first message, sent before any request, reaches an allowed dashboard only.
+ */
+const dashboard = document.documentElement.dataset.dashboard || ""
+
+// First thing, before any request: a window that stays silent tells the dashboard that the agent is not running.
+notify("ready", document.documentElement.dataset.version)
 
 const $ = (id) => document.getElementById(id)
 
 // Without CSS masking the PIN would show in clear, so fall back to a password field.
-if (!CSS.supports("-webkit-text-security", "disc")) $("pin").type = "password"
+const masking = CSS.supports("-webkit-text-security", "disc")
+if (!masking) $("pin").type = "password"
 
 const sections = ["loading", "fatal", "form", "working", "done"]
 let pollTimer = 0
@@ -39,6 +48,23 @@ let signer = ""
 let remembered = null
 /** How long the agent remembers a PIN on request, 0 when it does not offer to. */
 let rememberMinutes = 0
+/**
+ * The PIN attempts left before the card blocks the PIN, { left, card }, as the card reported them (card) or as the
+ * agent counted wrong PINs on this computer, even in windows closed since; null when no wrong PIN is on record.
+ */
+let attempts = null
+const lastAttempt = () => attempts !== null && attempts.left <= 1
+/**
+ * What the agent says about the card: "checking" until it answers, then "present", "absent" (a signature would fail
+ * before the PIN is sent) or "unknown" (it cannot tell). The PIN and Sign wait while the card is checked for or absent,
+ * so that nobody types a PIN for a card that is not there; "unknown" never holds them back.
+ */
+let card = "checking"
+const cardReady = () => card === "present" || card === "unknown"
+/** Answers in a row without the card since the page last saw it. */
+let missing = 0
+/** A card moving on the reader can drop out of one answer: only this many in a row mean that it was taken away. */
+const REMOVED_AFTER = 2
 
 function readTickets() {
   try {
@@ -53,10 +79,19 @@ function show(id) {
   for (const s of sections) $(s).hidden = s !== id
 }
 
-/** Tells the dashboard what happened; the dashboard also polls its backend, so this is only a shortcut. */
-function notify(status, detail) {
+/** Sets text only when it changes, so that live regions announce changes and nothing else. */
+function setText(el, text) {
+  if (el.textContent !== text) el.textContent = text
+}
+
+/**
+ * Tells the dashboard what happened, with any other fields of the message; the dashboard also polls its backend, so
+ * this is only a shortcut.
+ */
+function notify(status, detail, fields) {
+  if (!window.opener || !dashboard) return
   try {
-    if (window.opener && origin) window.opener.postMessage({ type: "pn-esign", status, detail }, origin)
+    window.opener.postMessage({ type: "pn-esign", status, detail, ...fields }, dashboard)
   } catch {
     // The opener navigated away or is cross-origin isolated: polling covers it.
   }
@@ -83,15 +118,23 @@ async function api(path, body) {
 
 const START_AGAIN = "Close this window and start again from the dashboard."
 
-/** Ends the page on message, followed by hint ("" for none) and, with setup, a link to the dashboard's setup guide. */
-function fatal(message, { hint = START_AGAIN, setup = false } = {}) {
+/**
+ * Ends the page on message, followed by hint ("" for none) and, with setup, a link to the dashboard's setup guide or,
+ * with download, the download of the newest version. The dashboard learns it as a fatal error with code, so it
+ * explains it instead of waiting for the window.
+ */
+function fatal(message, options = {}) {
+  const { code = "internal", title = "Cannot sign", hint = START_AGAIN, setup = false, download = false } = options
   stopPolling()
+  notify("error", code, { message, fatal: true })
+  $("fatal-title").textContent = title
   $("fatal-message").textContent = message
   $("fatal-hint").textContent = hint
   $("fatal-hint").hidden = !hint
   // origin was accepted by the agent before any error that asks for the setup guide.
   if (setup) $("fatal-setup").href = new URL("/dashboard/esign/setup", origin).href
   $("fatal-setup-row").hidden = !setup
+  $("fatal-download").hidden = !download
   show("fatal")
   // The control that had the focus is gone: move it to the heading, as the done screen does, so it is announced.
   $("fatal-title").focus()
@@ -119,11 +162,21 @@ const RETRYABLE = new Set(["card_removed", "device_error", "no_card", "no_reader
 /** The page's own words for an expired link, the same however the expiry was noticed. */
 const errorText = (error) => (error?.code === "job_expired" ? "This signing link expired." : error?.message)
 
+/** Ends the page on a version that the dashboard no longer accepts, offering the one that replaces it. */
+function outdated() {
+  fatal(`This version is too old to sign. ${$("fatal-download").dataset.update}`, {
+    code: "agent_outdated",
+    title: "Update PoliNetwork eSign",
+    hint: "Then sign again from the dashboard.",
+    download: true,
+  })
+}
+
 /** Ends the page on an error that leaves nothing to sign here. */
 function fatalError(error) {
   const setup = SETUP.has(error?.code)
   const hint = setup || EXPLAINED.has(error?.code) ? "" : START_AGAIN
-  fatal(errorText(error) || "The signature failed.", { hint, setup })
+  fatal(errorText(error) || "The signature failed.", { code: error?.code, hint, setup })
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
@@ -171,9 +224,8 @@ function describeDoc(li, doc) {
     line(li, errorText(error), "bad")
     return
   }
-  const by = [doc.job.requestedBy && `Requested by ${doc.job.requestedBy}`, doc.job.signer.role].filter(Boolean)
-  line(li, by.join(" · "), "muted")
-  line(li, plan(doc.job))
+  // The role is the signer's: it goes with what they sign.
+  line(li, [doc.job.signer.role, plan(doc.job)].filter(Boolean).join(" · "), "muted")
 }
 
 function describeResult(li, doc) {
@@ -194,20 +246,30 @@ function describeResult(li, doc) {
 }
 
 async function load() {
-  if (!tickets.length || !origin) return fatal("This page needs a signing link from the dashboard.")
-  if (tickets.length > MAX_TICKETS) return fatal(`Sign at most ${MAX_TICKETS} documents at a time.`)
+  if (!tickets.length || !origin)
+    return fatal("This page needs a signing link from the dashboard.", { code: "ticket_invalid" })
+  if (tickets.length > MAX_TICKETS)
+    return fatal(`Sign at most ${MAX_TICKETS} documents at a time.`, { code: "too_many_tickets" })
   if (tickets.length > 1) $("loading-text").textContent = "Loading the documents…"
   try {
-    ;({ jobs: docs, remembered, rememberMinutes = 0 } = await api("/api/job", { tickets, origin }))
+    ;({ jobs: docs, remembered, rememberMinutes = 0, attempts = null } = await api("/api/job", { tickets, origin }))
   } catch (error) {
-    return fatal(error.message || "Cannot load the document.")
+    // There is no Sign to press yet: the dashboard offers to start PoliNetwork eSign and loads this window again.
+    if (error.code === "agent_unreachable")
+      return fatal("Start it again from the dashboard.", {
+        code: error.code,
+        title: "PoliNetwork eSign stopped",
+        hint: "",
+      })
+    return fatal(error.message || "Cannot load the document.", { code: error.code })
   }
+  if (docs.some((d) => d.error?.code === "agent_outdated")) return outdated()
   for (const doc of docs) if (!doc.job) outcome.set(doc.ticket, { status: "failed", error: doc.error })
   const ready = docs.filter((d) => d.job)
   if (!ready.length) {
     if (docs.length === 1) return fatalError(docs[0].error)
     fillList($("fatal-docs"), docs, describeDoc)
-    return fatal("None of these documents can be signed.")
+    return fatal("None of these documents can be signed.", { code: docs[0].error?.code })
   }
   showForm(docs, ready.map((d) => d.ticket))
 }
@@ -218,6 +280,7 @@ function showForm(list, toSign, message = "") {
   $("pin").value = ""
   $("remember").checked = false
   formError(message)
+  pinError("")
   show("form")
   showPIN()
   startPolling()
@@ -241,9 +304,13 @@ function setPending(list, toSign) {
     const { job } = docs[0]
     $("heading").textContent = job.document.title
     $("doc-file").textContent = job.document.fileName
+    // A file named after the title adds nothing.
+    $("doc-file-row").hidden = job.document.fileName.replace(/\.pdf$/i, "") === job.document.title
     $("doc-place").textContent = plan(job)
-    $("doc-requester").textContent = job.requestedBy || ""
-    $("doc-requester-row").hidden = !job.requestedBy
+    // Neither does "Requested by" on someone's own request: their name is in "Signing as".
+    const requester = job.requestedBy === job.signer.name ? "" : job.requestedBy || ""
+    $("doc-requester").textContent = requester
+    $("doc-requester-row").hidden = !requester
     $("doc-signer").textContent = job.signer.role ? `${job.signer.name} · ${job.signer.role}` : job.signer.name
     $("docs").hidden = true
     document.title = `Sign “${job.document.title}” · PoliNetwork`
@@ -262,12 +329,21 @@ function showPIN() {
     const until = timeFormat.format(new Date(remembered.expires))
     $("remembered-text").textContent =
       `Your PIN is remembered${remembered.signer ? ` for ${remembered.signer}` : ""} until ${until}, while the CIE stays on the reader.`
-    $("submit").focus()
   } else {
-    $("remember-row").hidden = !rememberMinutes
+    // The last attempt is no time to remember a PIN that may be wrong.
+    $("remember-row").hidden = !rememberMinutes || lastAttempt()
+    if (lastAttempt()) $("remember").checked = false
     $("remember-text").textContent = `Remember the PIN on this computer for ${rememberMinutes} minutes`
-    $("pin").focus()
   }
+  const warn = !known && lastAttempt()
+  $("last-attempt").hidden = !warn
+  $("pin").setAttribute("aria-describedby", warn ? "last-attempt pin-hint" : "pin-hint")
+  if (cardReady()) focusNext()
+}
+
+/** Moves the focus to what the signer does once the card is there: type the PIN, or press Sign when it is remembered. */
+function focusNext() {
+  ;(remembered ? $("submit") : $("pin")).focus()
 }
 
 /** Updates what the agent remembers from a status, and asks for the PIN when the agent forgot it meanwhile. */
@@ -312,7 +388,6 @@ async function checkExpiry() {
   const expired = jobs.filter((d) => pending.includes(d.ticket) && d.error?.code === "job_expired").map((d) => d.ticket)
   const left = pending.filter((t) => !expired.includes(t))
   if (!left.length) {
-    notify("error", "job_expired")
     fatalError({ code: "job_expired" })
     return
   }
@@ -329,32 +404,110 @@ async function checkExpiry() {
 async function pollStatus() {
   if (signing) return
   checkExpiry()
-  const card = $("card")
   let status
   try {
     status = await api("/api/status")
   } catch (error) {
-    if (error.code === "agent_unreachable" && ++unanswered >= 3) {
-      card.dataset.state = "waiting"
-      $("card-text").textContent = "PoliNetwork eSign stopped answering. Start it again."
-    }
+    // Whatever stops the agent from answering, signing would fail and say so: the PIN is not held back for it.
+    if (++unanswered >= 3)
+      setCard(
+        "unknown",
+        error.code === "agent_unreachable"
+          ? { state: "problem", title: "PoliNetwork eSign stopped answering", detail: "Start it again." }
+          : { state: "unknown", title: "Place your CIE on the reader", detail: "" },
+      )
     return
   }
   unanswered = 0
   if (status.busy) return
   setRemembered(status.remembered)
-  const { reader, software } = describeStatus(status)
-  card.dataset.state = status.ready ? "ready" : "waiting"
-  if (status.ready) $("card-text").textContent = reader?.name ? `Card detected on ${reader.name}` : "Card detected"
-  // Unavailable software lists no readers, so it comes first.
-  else if (!software.ok) $("card-text").textContent = "No CIE software found. See the setup guide in the dashboard."
-  else if (!reader?.ok) $("card-text").textContent = "Connect the NFC card reader"
-  else $("card-text").textContent = `Place your CIE on the reader (${reader.name})`
+  // A card moving on the reader can drop out of one answer: only a second one in a row means that it was taken away.
+  if (status.card === "absent" && card === "present" && ++missing < REMOVED_AFTER) return
+  setCard(status.card, cardView(status))
 }
 
-function formError(message) {
+/**
+ * Asks the agent about the card at once, and believes an answer without the card the first time: the signer is about
+ * to send the PIN, or the agent just said that the card is not there. Returns whether the PIN may go.
+ */
+async function checkCard() {
+  try {
+    const status = await api("/api/status")
+    if (!status.busy) {
+      setRemembered(status.remembered)
+      setCard(status.card, cardView(status))
+    }
+  } catch {
+    // The polls go on, and decide after a few failures.
+  }
+  return cardReady()
+}
+
+/** What the card block says for a status: its state ("step" is the signer's next move), title and detail. */
+function cardView(status) {
+  const { reader, software } = describeStatus(status)
+  const where = reader?.name || ""
+  if (status.card === "present") return { state: "ready", title: "CIE detected", detail: where || software.name }
+  if (status.card === "unknown") return { state: "unknown", title: "Place your CIE on the reader", detail: where }
+  // Unavailable software lists no readers, so it comes first.
+  if (!software.ok)
+    return { state: "problem", title: "CIE ID is not set up", detail: "See the setup guide in the dashboard." }
+  if (!reader?.ok) return { state: "step", title: "Connect the NFC card reader", detail: "Then place your CIE on it." }
+  return { state: "step", title: "Place your CIE on the reader", detail: where }
+}
+
+/**
+ * Shows what the agent says about the card, and holds the PIN and Sign back while no card is there: the typed digits
+ * stay in the disabled field. When the card arrives, the focus moves on, unless the signer put it somewhere.
+ */
+function setCard(next, view) {
+  missing = 0
+  const was = cardReady()
+  card = next
+  $("card").dataset.state = view.state
+  setText($("card-title"), view.title)
+  const detail = $("card-detail")
+  setText(detail, view.detail)
+  detail.hidden = !view.detail
+  // A long reader name is cut to one line: the full name shows on hover.
+  detail.title = detail.scrollWidth > detail.clientWidth ? view.detail : ""
+  const ready = cardReady()
+  $("pin-fields").disabled = !ready
+  $("submit").disabled = !ready
+  if (card === "present" && CARD_MISSING.has(errorCode)) formError("")
+  if (ready && !was && !$("form").hidden && document.activeElement === document.body) focusNext()
+}
+
+/** Errors of a signature that the card was not there for. */
+const CARD_MISSING = new Set(["no_card", "no_reader"])
+/** Errors of a signature that stopped before the PIN reached a card: the field keeps it for the next try. */
+const PIN_KEPT = new Set([...CARD_MISSING, "busy"])
+/** The code of the error shown above the buttons, "" for none or for one without a code. */
+let errorCode = ""
+
+function formError(message, code = "") {
+  errorCode = message ? code : ""
   $("error").textContent = message
   $("error").hidden = !message
+}
+
+const PIN_HINT = $("pin-hint").textContent
+/** Errors about the PIN itself, shown under its field. */
+const PIN_ERRORS = new Set(["pin_incorrect", "pin_invalid", "pin_required"])
+
+/** Shows message under the PIN field, in place of its hint; "" puts the hint back. */
+function pinError(message) {
+  setText($("pin-hint"), message || PIN_HINT)
+  $("pin-hint").classList.toggle("bad", Boolean(message))
+  if (message) $("pin").setAttribute("aria-invalid", "true")
+  else $("pin").removeAttribute("aria-invalid")
+}
+
+/** What to say under the field after a wrong PIN. The count of this computer can miss wrong PINs typed elsewhere. */
+function wrongPIN() {
+  if (lastAttempt()) return "Wrong PIN."
+  if (attempts?.card) return `Wrong PIN. ${attempts.left} attempts left.`
+  return "Wrong PIN. Three wrong PINs in a row block your CIE."
 }
 
 /** Documents that failed on a card error and can be signed again with the PIN. */
@@ -370,16 +523,18 @@ function showResults() {
   const signed = docs.filter((d) => outcome.get(d.ticket)?.status === "completed").length
   const all = signed === docs.length
   const again = retryable()
-  notify(all ? "completed" : "error", all ? undefined : docs.map((d) => outcome.get(d.ticket)?.error?.code).find(Boolean))
+  const failed = docs.map((d) => outcome.get(d.ticket)?.error?.code).find(Boolean)
+  // The dashboard checks the version again before each signature.
+  if (!signed && docs.some((d) => outcome.get(d.ticket)?.error?.code === "agent_outdated")) return outdated()
 
-  if (docs.length === 1) {
+  if (docs.length === 1 && !all) {
     const result = outcome.get(docs[0].ticket)
-    if (!all) {
-      // One document: an error that retrying can fix goes back to the PIN, anything else ends here, as before.
-      if (again.length) return showForm(docs, [docs[0].ticket], result.error.message)
-      return fatalError(result.error)
-    }
+    // One document: an error that retrying can fix goes back to the PIN, anything else ends here.
+    if (!again.length) return fatalError(result.error)
+    notify("error", failed)
+    return showForm(docs, [docs[0].ticket], result.error.message)
   }
+  notify(all ? "completed" : "error", all ? undefined : failed)
 
   $("done-icon").textContent = all ? "✓" : "!"
   $("done-icon").classList.toggle("bad", !all)
@@ -390,40 +545,58 @@ function showResults() {
   document.title = `${$("done-title").textContent} · PoliNetwork`
 
   let message = signer ? `Signed as ${signer}.` : ""
-  if (all) message += " You can close this window."
-  else if (again.some((d) => outcome.get(d.ticket).error.code !== "backend_unreachable"))
+  if (again.some((d) => outcome.get(d.ticket).error.code !== "backend_unreachable"))
     message += " Keep the CIE still on the reader and try again."
   else if (again.length) message += " Try again in a moment."
-  else message += " Start again from the dashboard for the others."
+  else if (!all) message += " Start again from the dashboard for the others."
   $("done-message").textContent = message.trim()
   $("retry").hidden = again.length === 0
+  $("done-close").hidden = all
   show("done")
   $("done-title").focus()
-  if (all) setTimeout(() => window.close(), 4000)
+  if (!all) return
+  // The dashboard closes its window once the page behind it shows the signature, and the window closes itself after a
+  // while: it offers Close only to a signer who has to close it.
+  if (!window.opener) offerClose()
+  setTimeout(() => {
+    window.close()
+    if (!window.closed) offerClose()
+  }, 4000)
+}
+
+/** Tells the signer that they can close the window, once nothing else will. */
+function offerClose() {
+  if (!$("done-close").hidden) return
+  $("done-message").textContent = `${$("done-message").textContent} You can close this window.`.trim()
+  $("done-close").hidden = false
 }
 
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault()
+  if (signing || !cardReady()) return
   // Without a PIN the agent uses the one it remembers for this browser.
   const body = { tickets: pending, origin }
+  const pin = remembered ? "" : $("pin").value.trim()
   if (!remembered) {
-    const pin = $("pin").value.trim()
     if (!/^\d{8}$/.test(pin)) {
-      formError(
-        /^\d{4}$/.test(pin)
-          ? "Type all 8 digits of your CIE PIN. Other CIE apps ask only for the last 4."
-          : "Type the 8 digits of your CIE PIN.",
-      )
+      pinError(/^\d{4}$/.test(pin) ? "Type all 8 digits of your CIE PIN." : "Type the 8 digits of your CIE PIN.")
       $("pin").focus()
       return
     }
     body.pin = pin
     body.remember = $("remember").checked
   }
+  signing = true
+  // The last status had no card, which may only have moved on the reader: ask again rather than send the PIN for
+  // nothing. When the card is gone, the form goes back to waiting for it, with the PIN still typed.
+  if (missing > 0 && !(await checkCard())) {
+    signing = false
+    return
+  }
   // Cleared before the form goes away, so a browser watching the submission has nothing to offer to save.
   $("pin").value = ""
   formError("")
-  signing = true
+  pinError("")
   $("working-title").textContent = pending.length === 1 ? "Signing…" : `Signing ${pending.length} documents…`
   show("working")
   let result
@@ -431,32 +604,40 @@ $("form").addEventListener("submit", async (event) => {
     result = await api("/api/sign", body)
   } catch (error) {
     signing = false
-    if (JOB_ENDED.has(error.code) || TERMINAL.has(error.code)) {
-      notify("error", error.code)
-      return fatalError(error)
-    }
+    if (JOB_ENDED.has(error.code) || TERMINAL.has(error.code)) return fatalError(error)
     // After a failure the agent no longer remembers the PIN, unless the card was busy and was never tried.
     if (error.code !== "busy") remembered = null
+    if (error.code === "pin_incorrect") attempts = error.attempts || attempts
     show("form")
     showPIN()
-    $("pin").value = ""
-    let message = error.message || "The signature failed."
-    if (error.code === "pin_incorrect") {
-      message =
-        typeof error.retriesLeft === "number"
-          ? `Wrong PIN. ${error.retriesLeft} ${error.retriesLeft === 1 ? "attempt" : "attempts"} left before the PIN is blocked.`
-          : "Wrong PIN. After 3 wrong attempts the PIN is blocked and needs the PUK."
-    }
-    formError(message)
+    if (PIN_KEPT.has(error.code)) $("pin").value = pin
+    // The card block says it when it holds the PIN back for the card.
+    const shown = CARD_MISSING.has(error.code) && !(await checkCard())
+    if (error.code === "pin_incorrect") pinError(wrongPIN())
+    else if (PIN_ERRORS.has(error.code)) pinError(error.message)
+    else if (!shown) formError(error.message || "The signature failed.", error.code)
     // Asking for the PIN is not a failure of the signature.
     if (error.code !== "pin_required") notify("error", error.code)
     return
   }
   signing = false
   if (result.signer?.displayName) signer = result.signer.displayName
+  // Absent when no document was left to sign, so the PIN was not used.
+  if (result.attempts !== undefined) attempts = result.attempts
   for (const r of result.results || []) outcome.set(r.ticket, r)
   showResults()
 })
+
+/** Shows the PIN's digits so that the signer can check them, or masks them again. */
+function showDigits(shown) {
+  $("pin-show").setAttribute("aria-pressed", String(shown))
+  if (masking) $("pin").classList.toggle("masked", !shown)
+  else $("pin").type = shown ? "text" : "password"
+}
+
+// A click on the eye leaves the focus in the field, to go on typing.
+$("pin-show").addEventListener("mousedown", (event) => event.preventDefault())
+$("pin-show").addEventListener("click", () => showDigits($("pin-show").getAttribute("aria-pressed") !== "true"))
 
 $("pin").addEventListener("input", () => {
   $("pin").value = $("pin").value.replace(/\D/g, "").slice(0, 8)

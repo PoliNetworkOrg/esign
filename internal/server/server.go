@@ -13,10 +13,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -34,6 +36,27 @@ const APIHeader = "X-PN-eSign"
 
 //go:embed web
 var webFS embed.FS
+
+// pages are the HTML pages, rendered with pageData; their assets are served as they are.
+var pages = template.Must(template.ParseFS(webFS, "web/*.html"))
+
+// pageData is what the pages show before any script runs.
+type pageData struct {
+	// Version is the agent's version as people read it: "0.4.0" for the release tagged v0.4.0, or "dev".
+	Version string
+	// Dashboard is the signing page's origin parameter when the agent signs for it: the page's messages go there only.
+	Dashboard string
+	// Download replaces this version when the dashboard no longer accepts it.
+	Download downloadLink
+}
+
+// shownVersion drops the "v" of a release tag.
+func shownVersion(version string) string {
+	if rest, ok := strings.CutPrefix(version, "v"); ok && rest != "" && rest[0] >= '0' && rest[0] <= '9' {
+		return rest
+	}
+	return version
+}
 
 // Options configures the server.
 type Options struct {
@@ -76,6 +99,8 @@ type Server struct {
 	// memMu guards mem, the PIN the user chose to remember (see remember.go). Lock it after card, never before.
 	memMu sync.Mutex
 	mem   *remembered
+
+	pins wrongPINs
 }
 
 // New returns a server.
@@ -217,13 +242,18 @@ func (s *Server) guard(next http.Handler) http.Handler {
 
 func (s *Server) page(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data, err := webFS.ReadFile("web/" + name)
-		if err != nil {
-			http.NotFound(w, r)
+		data := pageData{Version: shownVersion(s.opts.Version), Download: download(runtime.GOOS)}
+		if origin := r.URL.Query().Get("origin"); OriginAllowed(s.opts.AllowedOrigins, origin) {
+			data.Dashboard = origin
+		}
+		var page bytes.Buffer
+		if err := pages.ExecuteTemplate(&page, name, data); err != nil {
+			s.opts.Logger.Error("render page", "page", name, "error", err)
+			http.Error(w, "PoliNetwork eSign could not show this page.", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(data)
+		_, _ = w.Write(page.Bytes())
 	}
 }
 
@@ -267,8 +297,41 @@ type statusResponse struct {
 	Providers []token.Status `json:"providers"`
 	// Ready is true when some provider sees a card.
 	Ready bool `json:"ready"`
+	// Card says whether a PIN typed now could reach a card (see cardState).
+	Card string `json:"card"`
 	// Remembered is set while this browser has a remembered PIN.
 	Remembered *rememberedInfo `json:"remembered,omitempty"`
+}
+
+// usable reports whether open would try the provider: it works and does not report that the card is missing.
+func usable(st token.Status) bool {
+	return st.Available && (st.CardPresent == nil || *st.CardPresent)
+}
+
+// Card states for the signing page, which takes the PIN only when it could reach a card.
+const (
+	// cardPresent: a usable provider sees a card.
+	cardPresent = "present"
+	// cardAbsent: no provider would be tried, so a signature would fail before the PIN is sent: no reader, no card, or
+	// no CIE software.
+	cardAbsent = "absent"
+	// cardUnknown: a usable provider cannot tell whether a card is there. The page must not hold the PIN back on it.
+	cardUnknown = "unknown"
+)
+
+// cardState tells what a signature started now would find, as open sees it.
+func cardState(statuses []token.Status) string {
+	state := cardAbsent
+	for _, st := range statuses {
+		switch {
+		case !usable(st):
+		case st.CardPresent != nil:
+			return cardPresent
+		default:
+			state = cardUnknown
+		}
+	}
+	return state
 }
 
 // providerStatus is p's status; a panic in it is logged and reported as unavailable.
@@ -289,6 +352,7 @@ func (s *Server) statuses(ctx context.Context) statusResponse {
 			res.Ready = true
 		}
 	}
+	res.Card = cardState(res.Providers)
 	return res
 }
 
@@ -332,7 +396,7 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) (*jobRequest, Ba
 		writeError(w, http.StatusBadRequest, "bad_request", "Malformed request")
 		return nil, nil, false
 	}
-	req.Tickets = uniqueTickets(req.Tickets)
+	req.Tickets = unique(req.Tickets)
 	valid := len(req.Tickets) > 0
 	for _, t := range req.Tickets {
 		valid = valid && backend.TicketPattern.MatchString(t)
@@ -353,14 +417,14 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) (*jobRequest, Ba
 	return &req, s.opts.Backend(req.Origin), true
 }
 
-// uniqueTickets returns tickets without repeats, in their order.
-func uniqueTickets(tickets []string) []string {
-	seen := make(map[string]bool, len(tickets))
+// unique returns list without repeats, in its order.
+func unique(list []string) []string {
+	seen := make(map[string]bool, len(list))
 	var out []string
-	for _, t := range tickets {
-		if !seen[t] {
-			seen[t] = true
-			out = append(out, t)
+	for _, s := range list {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
 		}
 	}
 	return out
@@ -398,7 +462,14 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	res := map[string]any{"jobs": fetchJobs(ctx, be, req.Tickets), "remembered": s.rememberedFor(r)}
+	jobs := fetchJobs(ctx, be, req.Tickets)
+	var signers []string
+	for _, j := range jobs {
+		if j.Job != nil {
+			signers = append(signers, signerKey(req.Origin, j.Job))
+		}
+	}
+	res := map[string]any{"jobs": jobs, "remembered": s.rememberedFor(r), "attempts": s.pins.get(signers)}
 	if s.opts.RememberFor > 0 {
 		res["rememberMinutes"] = int(s.opts.RememberFor / time.Minute)
 	}
@@ -444,7 +515,7 @@ func (s *Server) open(ctx context.Context, pin string) (token.Session, token.Pro
 		st := s.providerStatus(ctx, p)
 		readers = readers || len(st.Readers) > 0
 		available = available || st.Available
-		if !st.Available || (st.CardPresent != nil && !*st.CardPresent) {
+		if !usable(st) {
 			continue
 		}
 		session, err := p.Open(ctx, pin)
@@ -491,7 +562,7 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.PIN != "" && !token.ValidPIN(req.PIN, 8) {
-		writeTokenError(w, token.Errorf(token.CodePinInvalid, "malformed PIN"))
+		writeTokenError(w, token.Errorf(token.CodePinInvalid, "malformed PIN"), nil)
 		return
 	}
 	// A status check or the card watcher holds the card only briefly: wait for it rather than refusing the PIN.
@@ -516,6 +587,7 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 	cancelFetch()
 	results := make([]signResult, len(jobs))
 	var todo []int
+	var signers []string
 	signatures := 0
 	for i, j := range jobs {
 		if j.Error != nil {
@@ -524,6 +596,7 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 		}
 		results[i] = signResult{Ticket: j.Ticket, Status: "skipped"}
 		todo = append(todo, i)
+		signers = append(signers, signerKey(req.Origin, j.Job))
 		signatures += max(j.Job.Signatures, 1)
 	}
 	if len(todo) == 0 {
@@ -547,7 +620,14 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 		for _, i := range todo {
 			s.fail(ctx, be, jobs[i].Ticket, string(code), messageOf[code])
 		}
-		writeTokenError(w, err)
+		var left *attempts
+		switch code {
+		case token.CodePinIncorrect:
+			left = s.pins.wrong(signers, retriesLeft(err))
+		case token.CodePinLocked:
+			s.pins.forget(signers)
+		}
+		writeTokenError(w, err, left)
 		return
 	}
 	defer session.Close()
@@ -582,7 +662,10 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		started := time.Now()
-		n, err := signJob(ctx, be, session, chain, ticket)
+		n, err := signJob(ctx, be, session, chain, ticket, func() {
+			// The PIN opened a card that the backend accepts as this signer's: the card counts its attempts afresh.
+			s.pins.forget([]string{signerKey(req.Origin, job)})
+		})
 		if err == nil {
 			results[i].Status = "completed"
 			s.opts.Logger.Info("signed", "provider", provider.Name(), "signer", info.DisplayName, "job", job.ID, "signatures", n, "duration", time.Since(started).Round(time.Millisecond))
@@ -596,7 +679,8 @@ func (s *Server) sign(w http.ResponseWriter, r *http.Request) {
 			stop = e
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": results, "signer": info})
+	// The attempts left after this PIN, so that a form shown again does not warn about attempts the card restored.
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "signer": info, "attempts": s.pins.get(signers)})
 }
 
 // codePINRequired answers a signature without a PIN when none is remembered, or no longer usable.
@@ -608,8 +692,9 @@ type cardError struct{ error }
 func (e cardError) Unwrap() error { return e.error }
 
 // signJob adds the job's signatures one at a time (prepare, sign with the card, complete) until the backend says
-// the job is complete, and returns how many it added.
-func signJob(ctx context.Context, be Backend, session token.Session, chain [][]byte, ticket string) (int, error) {
+// the job is complete, and returns how many it added. accepted runs once the backend accepts the card's certificate
+// for the job's signer, at the first prepare.
+func signJob(ctx context.Context, be Backend, session token.Session, chain [][]byte, ticket string, accepted func()) (int, error) {
 	cert := session.Certificate()
 	steps := 0
 	for n := 0; ; n++ {
@@ -619,6 +704,7 @@ func signJob(ctx context.Context, be Backend, session token.Session, chain [][]b
 		}
 		if n == 0 {
 			steps = p.Steps
+			accepted()
 		}
 		// The card signs only as many digests as the backend announced at the start.
 		if n >= steps {
@@ -679,28 +765,28 @@ var messageOf = map[token.Code]string{
 	token.CodeNoReader:          "No smart-card reader found. Connect the NFC reader.",
 	token.CodeNoCard:            "No card on the reader. Place your CIE on the reader.",
 	token.CodeCardRemoved:       "The card moved away from the reader. Keep the CIE still on the reader and try again.",
-	token.CodeMiddlewareMissing: "No CIE software found on this computer.",
-	token.CodeNotPaired:         "This CIE is not set up on this computer yet.",
+	token.CodeMiddlewareMissing: "CIE ID is not set up on this computer.",
+	token.CodeNotPaired:         "This CIE is not paired with this computer yet. Pair it in CIE ID, then sign again.",
 	token.CodeCardUnsupported:   "This card is not a supported CIE.",
 	token.CodeCardUntrusted:     "This card could not be verified as a genuine CIE, so the PIN was not sent to it.",
 	token.CodeNotFound:          "No signing certificate found on the card.",
 	token.CodePinIncorrect:      "Wrong PIN.",
 	token.CodePinInvalid:        "Type the 8 digits of your CIE PIN.",
-	token.CodePinLocked:         "Your CIE PIN is blocked. Unblock it with your PUK in the CieID app on your phone or in CIE ID on this computer, then sign again from the dashboard. The PUK’s first half is on the receipt from the Comune, the second half in the letter that came with the card.",
+	token.CodePinLocked:         "Your CIE PIN is blocked. Unblock it with your PUK in the CieID app on your phone or in CIE ID on this computer, then sign again from the dashboard.",
 	token.CodeBusy:              "Another signature is in progress.",
 	token.CodeDevice:            "The card could not complete the operation. Try again.",
 }
 
-func writeTokenError(w http.ResponseWriter, err error) {
+// writeTokenError answers a card error, with the attempts left after a wrong PIN.
+func writeTokenError(w http.ResponseWriter, err error, left *attempts) {
 	code := token.CodeOf(err)
 	status, ok := statusOf[code]
 	if !ok {
 		status = http.StatusBadGateway
 	}
 	body := map[string]any{"code": string(code), "message": messageOf[code]}
-	var te *token.Error
-	if errors.As(err, &te) && code == token.CodePinIncorrect && te.RetriesLeft >= 0 {
-		body["retriesLeft"] = te.RetriesLeft
+	if left != nil {
+		body["attempts"] = left
 	}
 	writeJSON(w, status, map[string]any{"error": body})
 }

@@ -2,8 +2,9 @@
 # Builds the macOS app on a Mac: ./scripts/build-macos.sh [version]
 #
 # dist/PoliNetwork eSign.app holds a universal binary (arm64 + x86_64): the agent runs natively, and its x86_64
-# half runs the Intel-only official CIE middleware through Rosetta. Also writes
-# dist/PoliNetwork-eSign-<version>-macos.zip and, when hdiutil works, a .dmg.
+# half runs the Intel-only official CIE middleware through Rosetta. Also writes dist/PoliNetwork-eSign-macos.zip and,
+# when hdiutil works, dist/PoliNetwork-eSign-macos.dmg. Their names carry no version, so that
+# releases/latest/download/<name> always downloads the latest release: the dashboard links the .dmg that way.
 #
 # Signing: with MACOS_SIGN_IDENTITY set (a "Developer ID Application: …" identity in the keychain) the app is signed
 # with the hardened runtime; with APPLE_API_KEY_PATH, APPLE_API_KEY_ID and APPLE_API_ISSUER_ID also set, the zip and
@@ -60,7 +61,7 @@ else
 fi
 codesign --verify --strict --verbose=2 "$app"
 
-zip="dist/PoliNetwork-eSign-$version-macos.zip"
+zip="dist/PoliNetwork-eSign-macos.zip"
 rm -f "$zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
 if $notarize; then
@@ -73,7 +74,7 @@ if $notarize; then
 fi
 echo "$zip"
 
-dmg="dist/PoliNetwork-eSign-$version-macos.dmg"
+dmg="dist/PoliNetwork-eSign-macos.dmg"
 rm -f "$dmg"
 staging="$work/dmg"
 mkdir -p "$staging"

@@ -33,6 +33,13 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Check the downloads the dashboard links
+        # The dashboard downloads releases/latest/download/<name>: without these files its buttons would answer 404.
+        # releases/latest is the newest release that is not a pre-release, so release candidates never reach it.
+        run: |
+          for name in PoliNetwork-eSign-macos.dmg PoliNetwork-eSign-windows-amd64.zip; do
+            if [ ! -f "dist/$name" ]; then echo "::error::dist/$name is missing"; exit 1; fi
+          done
       - name: Channel
         id: channel
         # v1.2.3-rc.1 and similar are pre-releases: GitHub only, never the package repositories or the AUR.

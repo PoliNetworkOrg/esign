@@ -17,6 +17,14 @@ import (
 	"github.com/PoliNetworkOrg/esign/internal/token/worker"
 )
 
+// providerNames name each provider as users know it, so the report names the app to install.
+var providerNames = map[string]string{
+	"cie-mw":  "CIE ID",
+	"opencie": "OpenCIE",
+	"cie":     "built in",
+	"soft":    "development key",
+}
+
 // doctor prints what support needs to know: the build, installation, configuration, running agent, every
 // provider's module and architecture, and the readers and card each provider sees. It never asks for the PIN.
 func doctor(ctx context.Context, w io.Writer, cfg config.Config, configPath, dir string, specs []providerSpec) {
@@ -63,7 +71,7 @@ func doctor(ctx context.Context, w io.Writer, cfg config.Config, configPath, dir
 
 	fmt.Fprintln(w, "\nProviders")
 	for _, s := range specs {
-		fmt.Fprintf(w, "  %s\n", s.Name)
+		fmt.Fprintf(w, "  %s (%s)\n", s.Name, providerNames[s.Name])
 		switch {
 		case s.Module != "":
 			marchs := strings.Join(s.Archs, "+")

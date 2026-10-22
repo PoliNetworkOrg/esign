@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-version="{{.Version}}" data-dashboard="{{.Dashboard}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -29,22 +29,39 @@
         <p id="fatal-setup-row" class="muted" hidden>
           <a id="fatal-setup" target="_blank" rel="noreferrer">Open the setup guide</a>
         </p>
-        <button type="button" class="secondary" data-close>Close</button>
+        <div class="actions">
+          <button type="button" class="secondary" data-close>Close</button>
+          <a id="fatal-download" class="button" href="{{.Download.URL}}" data-update="{{.Download.Update}}" hidden
+            {{- if .Download.Page}} target="_blank" rel="noreferrer"{{end}}>{{.Download.Label}}</a>
+        </div>
       </section>
 
       <form id="form" class="panel" hidden autocomplete="off" novalidate>
         <h1 id="heading"></h1>
         <dl id="facts" class="facts" hidden>
-          <div><dt>File</dt><dd id="doc-file"></dd></div>
+          <div id="doc-file-row"><dt>File</dt><dd id="doc-file"></dd></div>
           <div><dt>Signature</dt><dd id="doc-place"></dd></div>
           <div id="doc-requester-row"><dt>Requested by</dt><dd id="doc-requester"></dd></div>
           <div><dt>Signing as</dt><dd id="doc-signer"></dd></div>
         </dl>
         <ul id="docs" class="docs" hidden tabindex="0" aria-label="Documents to sign"></ul>
 
-        <div id="card" class="card-status" data-state="unknown" role="status" aria-live="polite">
-          <span class="dot" aria-hidden="true"></span>
-          <span id="card-text">Looking for the card reader…</span>
+        <div id="card" class="card-step" data-state="checking" role="status" aria-live="polite">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <g class="wait">
+              <rect x="2.75" y="5.25" width="18.5" height="13.5" rx="2.5" />
+              <rect x="6" y="9.25" width="4.5" height="3.5" rx="0.75" />
+              <path d="M13.5 10h4.25M13.5 13.25h2.75" />
+            </g>
+            <g class="ok">
+              <circle cx="12" cy="12" r="9.25" />
+              <path d="m8.25 12.25 2.5 2.5 5-5" />
+            </g>
+          </svg>
+          <p class="card-text">
+            <strong id="card-title">Looking for the card reader…</strong>
+            <span id="card-detail" hidden></span>
+          </p>
         </div>
 
         <div id="remembered" class="remembered" hidden>
@@ -52,42 +69,63 @@
           <button type="button" class="link" id="forget">Use a different PIN</button>
         </div>
 
-        <div id="pin-fields">
+        <p id="last-attempt" class="warning" hidden>
+          <svg class="warning-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10.3 4.2 2.6 17.6A2 2 0 0 0 4.3 20.6h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" />
+            <path d="M12 9.5v4.25M12 17.1v.01" />
+          </svg>
+          <span><strong>Last attempt.</strong> One more wrong PIN blocks your CIE.</span>
+        </p>
+
+        <fieldset id="pin-fields" disabled>
           <label for="pin">CIE PIN</label>
-          <input
-            id="pin"
-            type="text"
-            class="masked"
-            inputmode="numeric"
-            pattern="[0-9]{8}"
-            maxlength="8"
-            minlength="8"
-            required
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-            data-1p-ignore
-            data-lpignore="true"
-            data-bwignore
-            data-form-type="other"
-            aria-describedby="pin-hint"
-          />
-          <p id="pin-hint" class="hint">
-            All 8 digits: the first 4 are on the Comune’s receipt, the last 4 in the letter that came with the card. It
-            stays on this computer.
-          </p>
+          <div class="pin-box">
+            <input
+              id="pin"
+              type="text"
+              class="masked"
+              inputmode="numeric"
+              pattern="[0-9]{8}"
+              maxlength="8"
+              minlength="8"
+              required
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
+              data-form-type="other"
+              aria-describedby="pin-hint"
+            />
+            <button
+              type="button"
+              id="pin-show"
+              class="reveal"
+              aria-label="Show PIN"
+              aria-pressed="false"
+              aria-controls="pin"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2.75 12S6.25 5.75 12 5.75 21.25 12 21.25 12 17.75 18.25 12 18.25 2.75 12 2.75 12Z" />
+                <circle cx="12" cy="12" r="2.75" />
+                <path class="slash" d="m4.5 4.5 15 15" />
+              </svg>
+            </button>
+          </div>
+          <p id="pin-hint" class="hint" aria-live="polite">8 digits. It stays on this computer.</p>
           <label id="remember-row" class="check-row" hidden>
             <input id="remember" type="checkbox" />
             <span id="remember-text"></span>
           </label>
-        </div>
+        </fieldset>
 
         <p id="error" class="error" role="alert" hidden></p>
 
         <div class="actions">
           <button type="button" class="secondary" id="cancel">Cancel</button>
-          <button type="submit" id="submit">Sign</button>
+          <button type="submit" id="submit" disabled>Sign</button>
         </div>
       </form>
 
@@ -103,10 +141,12 @@
         <ul id="results" class="docs" hidden tabindex="0" aria-label="Results"></ul>
         <p id="done-message" class="muted"></p>
         <div class="actions center">
-          <button type="button" class="secondary" data-close>Close</button>
+          <button type="button" class="secondary" id="done-close" data-close>Close</button>
           <button type="button" id="retry" hidden>Try again</button>
         </div>
       </section>
+
+      <footer class="version">PoliNetwork eSign {{.Version}}</footer>
     </main>
   </body>
 </html>

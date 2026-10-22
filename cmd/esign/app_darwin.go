@@ -42,15 +42,16 @@ func plistString(path, key string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// systemNotes reports the Software CIE app and its paired cards.
+// systemNotes reports the CIE ID app and the cards paired in it. Pairing the card in CIE ID is the setup check on
+// macOS: a card that pairs there signs here too.
 func systemNotes() []string {
 	var notes []string
 	app := "/Applications/CIE ID.app"
 	if _, err := os.Stat(app); err == nil {
 		info := filepath.Join(app, "Contents", "Info.plist")
-		notes = append(notes, fmt.Sprintf("Software CIE: %s %s (%s)", app, plistString(info, "CFBundleShortVersionString"), plistString(info, "CFBundleIdentifier")))
+		notes = append(notes, fmt.Sprintf("CIE ID: %s %s (%s)", app, plistString(info, "CFBundleShortVersionString"), plistString(info, "CFBundleIdentifier")))
 	} else {
-		notes = append(notes, "Software CIE: not installed (Mac App Store, \"Software CIE\")")
+		notes = append(notes, "CIE ID: not installed (Mac App Store, where it is called \"Software CIE\")")
 	}
 	home, _ := os.UserHomeDir()
 	cache := filepath.Join(home, "Library", "Group Containers", "group.it.ipzs.SoftwareCIE", "Library", "Caches", "CIEPKI")
@@ -63,11 +64,15 @@ func systemNotes() []string {
 				n++
 			}
 		}
-		notes = append(notes, fmt.Sprintf("paired cards: %d in %s", n, cache))
+		note := fmt.Sprintf("paired cards: %d in %s", n, cache)
+		if n == 0 {
+			note += "; pair the card in CIE ID"
+		}
+		notes = append(notes, note)
 	case os.IsPermission(err):
 		notes = append(notes, "paired cards: unknown, macOS did not let this program read "+cache)
 	default:
-		notes = append(notes, "paired cards: none ("+cache+" is absent)")
+		notes = append(notes, "paired cards: none ("+cache+" is absent); pair the card in CIE ID")
 	}
 	return notes
 }
