@@ -274,10 +274,17 @@ func TestSignPageDashboard(t *testing.T) {
 }
 
 func TestDownload(t *testing.T) {
-	replaces := "Download the new one and open it: it replaces this one."
 	cases := map[string]downloadLink{
-		"darwin":  {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg", Label: "Download for macOS", Update: replaces},
-		"windows": {URL: "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-windows-amd64.zip", Label: "Download for Windows", Update: replaces},
+		"darwin": {
+			URL:    "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-macos.dmg",
+			Label:  "Download for macOS",
+			Update: "Download the new one, open it and open PoliNetwork eSign inside: it replaces this one.",
+		},
+		"windows": {
+			URL:    "https://github.com/PoliNetworkOrg/esign/releases/latest/download/PoliNetwork-eSign-windows-amd64.zip",
+			Label:  "Download for Windows",
+			Update: "Download the new one, extract it and open esign.exe: it replaces this one.",
+		},
 		"linux": {
 			URL:    "https://github.com/PoliNetworkOrg/esign/releases/latest",
 			Label:  "Open the download page",

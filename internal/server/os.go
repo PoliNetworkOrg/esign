@@ -21,12 +21,19 @@ type downloadLink struct {
 // (scripts/build-macos.sh, scripts/build-windows.sh); Linux has a package per distribution, listed on the release page,
 // which the package manager updates.
 func download(goos string) downloadLink {
-	const replaces = "Download the new one and open it: it replaces this one."
 	switch goos {
 	case "darwin":
-		return downloadLink{URL: latestRelease + "/download/PoliNetwork-eSign-macos.dmg", Label: "Download for macOS", Update: replaces}
+		return downloadLink{
+			URL:    latestRelease + "/download/PoliNetwork-eSign-macos.dmg",
+			Label:  "Download for macOS",
+			Update: "Download the new one, open it and open PoliNetwork eSign inside: it replaces this one.",
+		}
 	case "windows":
-		return downloadLink{URL: latestRelease + "/download/PoliNetwork-eSign-windows-amd64.zip", Label: "Download for Windows", Update: replaces}
+		return downloadLink{
+			URL:    latestRelease + "/download/PoliNetwork-eSign-windows-amd64.zip",
+			Label:  "Download for Windows",
+			Update: "Download the new one, extract it and open esign.exe: it replaces this one.",
+		}
 	}
 	return downloadLink{
 		URL:    latestRelease,
