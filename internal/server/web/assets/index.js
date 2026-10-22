@@ -36,12 +36,13 @@ function render(status) {
   setText($("version"), `PoliNetwork eSign ${status.version}`)
 }
 
-function renderStopped() {
-  setRow("reader", { ok: false, text: "Open it again." })
+/** Shows heading and text in place of the status rows. */
+function renderProblem(heading, text) {
+  setRow("reader", { ok: false, text })
   setRow("card", undefined)
   setRow("software", undefined)
   $("software-detail").hidden = true
-  setHeading("PoliNetwork eSign stopped", false)
+  setHeading(heading, false)
 }
 
 async function poll() {
@@ -49,11 +50,12 @@ async function poll() {
   inFlight = true
   try {
     const res = await fetch("/api/status", { headers: { "X-PN-eSign": "1" }, cache: "no-store" })
-    const status = await res.json()
-    // While a signature runs the agent answers busy: the last state still holds.
-    if (res.ok && !status.busy) render(status)
+    const status = await res.json().catch(() => ({}))
+    // While a signature runs the agent answers busy: the last state still holds. A failed check holds nothing.
+    if (!res.ok) renderProblem("PoliNetwork eSign is running", status.error?.message || "Cannot check the card reader.")
+    else if (!status.busy) render(status)
   } catch {
-    renderStopped()
+    renderProblem("PoliNetwork eSign stopped", "Open it again.")
   }
   inFlight = false
   if (document.visibilityState === "visible") timer = setTimeout(poll, 1500)
